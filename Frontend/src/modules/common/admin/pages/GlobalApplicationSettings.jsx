@@ -14,6 +14,7 @@ import { adminAPI } from "@/services/api";
 import { setCachedSettings } from "@/modules/common/utils/businessSettings";
 import { cn } from "@/lib/utils";
 import { compressImage } from "@/shared/utils/imageCompression";
+import { getImageUrl } from "@/shared/utils/getImageUrl";
 
 const SectionCard = ({ title, children, id, className = '' }) => (
   <div className={cn("bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-8", className)} id={id}>
@@ -167,25 +168,25 @@ const GlobalApplicationSettings = ({ logoOnly = false }) => {
               : "0",
         });
 
-        if (settings.adminLogo?.url) setAdminLogoPreview(settings.adminLogo.url);
-        if (settings.adminFavicon?.url) setAdminFaviconPreview(settings.adminFavicon.url);
+        if (settings.adminLogo?.url) setAdminLogoPreview(getImageUrl(settings.adminLogo.url));
+        if (settings.adminFavicon?.url) setAdminFaviconPreview(getImageUrl(settings.adminFavicon.url));
 
-        if (settings.userLogo?.url) setUserLogoPreview(settings.userLogo.url);
-        if (settings.userFavicon?.url) setUserFaviconPreview(settings.userFavicon.url);
+        if (settings.userLogo?.url) setUserLogoPreview(getImageUrl(settings.userLogo.url));
+        if (settings.userFavicon?.url) setUserFaviconPreview(getImageUrl(settings.userFavicon.url));
 
-        if (settings.deliveryLogo?.url) setDeliveryLogoPreview(settings.deliveryLogo.url);
-        if (settings.deliveryFavicon?.url) setDeliveryFaviconPreview(settings.deliveryFavicon.url);
+        if (settings.deliveryLogo?.url) setDeliveryLogoPreview(getImageUrl(settings.deliveryLogo.url));
+        if (settings.deliveryFavicon?.url) setDeliveryFaviconPreview(getImageUrl(settings.deliveryFavicon.url));
 
-        if (settings.restaurantLogo?.url) setRestaurantLogoPreview(settings.restaurantLogo.url);
-        if (settings.restaurantFavicon?.url) setRestaurantFaviconPreview(settings.restaurantFavicon.url);
+        if (settings.restaurantLogo?.url) setRestaurantLogoPreview(getImageUrl(settings.restaurantLogo.url));
+        if (settings.restaurantFavicon?.url) setRestaurantFaviconPreview(getImageUrl(settings.restaurantFavicon.url));
 
-        if (settings.sellerLogo?.url) setSellerLogoPreview(settings.sellerLogo.url);
-        if (settings.sellerFavicon?.url) setSellerFaviconPreview(settings.sellerFavicon.url);
+        if (settings.sellerLogo?.url) setSellerLogoPreview(getImageUrl(settings.sellerLogo.url));
+        if (settings.sellerFavicon?.url) setSellerFaviconPreview(getImageUrl(settings.sellerFavicon.url));
 
-        if (settings.sellerLoginBanner?.url) setSellerLoginBannerPreview(settings.sellerLoginBanner.url);
+        if (settings.sellerLoginBanner?.url) setSellerLoginBannerPreview(getImageUrl(settings.sellerLoginBanner.url));
         setSellerLoginBannerActive(settings.sellerLoginBanner?.active !== false);
 
-        if (settings.restaurantLoginBanner?.url) setRestaurantLoginBannerPreview(settings.restaurantLoginBanner.url);
+        if (settings.restaurantLoginBanner?.url) setRestaurantLoginBannerPreview(getImageUrl(settings.restaurantLoginBanner.url));
         setRestaurantLoginBannerActive(settings.restaurantLoginBanner?.active !== false);
       }
     } catch (err) {

@@ -1057,6 +1057,16 @@ export default function AdminSidebar({
     (tab) => tab.enabled && tab.visible,
   );
 
+  const moduleTabColors = {
+    food: "bg-orange-500 shadow-orange-500/30",
+    quick: "bg-green-500 shadow-green-500/30",
+    porter: "bg-[#3B82F6] shadow-[#3B82F6]/30",
+    taxi: "bg-red-500 shadow-red-500/30",
+    bikeRent: "bg-teal-500 shadow-teal-500/30",
+    serviceProvider: "bg-violet-500 shadow-violet-500/30",
+    construction: "bg-amber-500 shadow-amber-500/30",
+  };
+
   return (
     <>
       <style>{`
@@ -1266,8 +1276,8 @@ export default function AdminSidebar({
                       className={cn(
                         "min-w-0 h-5 min-h-0 rounded-md px-0.5 py-0 text-[8px] font-bold uppercase leading-none tracking-wide transition-all whitespace-normal",
                         tab.active
-                          ? "bg-[#FF6A00] text-white shadow-[0_4px_12px_rgba(255,106,0,0.2)]"
-                          : "text-[#5C5247] hover:text-[#1A1A1A] hover:bg-white/80",
+                          ? cn("text-white shadow-[0_3px_8px_rgba(0,0,0,0.25)]", moduleTabColors[tab.key] || "bg-gray-600")
+                          : "text-gray-300 hover:text-white hover:bg-white/10",
                       )}
                     >
                       {tab.label}

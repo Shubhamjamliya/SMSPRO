@@ -33,13 +33,6 @@ export const commonAdminSidebarMenu = [
         subItems: [
           {
             type: "link",
-            label: "Modules",
-            permissionKey: "modules",
-            path: "/admin/global-settings/modules",
-            icon: "LayoutGrid",
-          },
-          {
-            type: "link",
             label: "Vehicle Configuration",
             permissionKey: "vehicle_configuration",
             path: "/admin/global-settings/vehicle-configuration",
@@ -53,20 +46,6 @@ export const commonAdminSidebarMenu = [
             icon: "Car",
           },
         ],
-      },
-    ],
-  },
-  {
-    type: "section",
-    label: "Developer Settings",
-    permissionKey: "developer_settings",
-    items: [
-      {
-        type: "link",
-        label: "Toggles",
-        permissionKey: "modules",
-        path: "/admin/global-settings/toggles",
-        icon: "Zap",
       },
     ],
   },
@@ -88,6 +67,27 @@ export const commonAdminSidebarMenu = [
         permissionKey: "driver_min_wallet",
         path: "/admin/global-settings/driver-min-wallet",
         icon: "Wallet",
+      },
+    ],
+  },
+  {
+    type: "section",
+    label: "Developer Settings",
+    permissionKey: "developer_settings",
+    items: [
+      {
+        type: "link",
+        label: "Toggles",
+        permissionKey: "modules",
+        path: "/admin/global-settings/toggles",
+        icon: "Zap",
+      },
+      {
+        type: "link",
+        label: "Modules",
+        permissionKey: "modules",
+        path: "/admin/global-settings/modules",
+        icon: "LayoutGrid",
       },
     ],
   },
