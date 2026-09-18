@@ -2810,7 +2810,7 @@ export const zoneAPI = {
 };
 export const uploadAPI = {
   /**
-   * Upload a single image file to the backend (Cloudinary-backed).
+   * Upload a single image or media file to the backend.
    * @param {File|Blob} file
    * @param {{ folder?: string, media?: boolean }} options
    */
@@ -2827,7 +2827,7 @@ export const uploadAPI = {
 
     const path = options.media ? "/uploads/media" : "/uploads/image";
     return apiClient.post(path, formData, {
-      headers: { "Content-Type": "multipart/form-data" },
+      timeout: 300000,
     });
   },
 };

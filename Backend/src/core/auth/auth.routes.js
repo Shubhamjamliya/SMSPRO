@@ -50,11 +50,11 @@ router.post('/admin/forgot-password/request-otp', authRateLimiter, requestAdminF
 router.post('/admin/forgot-password/reset', authRateLimiter, resetAdminPasswordWithOtpController);
 
 // Refresh token
-router.post('/refresh-token', refreshTokenController);
+router.post('/refresh-token', authRateLimiter, refreshTokenController);
 
 // Logout (invalidates refresh token)
-router.post('/logout', logoutController);
-router.post('/logout-all', logoutAllController);
+router.post('/logout', authRateLimiter, logoutController);
+router.post('/logout-all', authRateLimiter, logoutAllController);
 
 // Authenticated user profile (requires Bearer token)
 router.get('/me', authMiddleware, getMeController);
@@ -64,4 +64,3 @@ router.patch('/admin/profile', authMiddleware, requireAdmin, updateAdminProfileC
 router.post('/admin/change-password', authMiddleware, requireAdmin, changeAdminPasswordController);
 
 export default router;
-

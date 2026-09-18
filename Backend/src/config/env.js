@@ -61,13 +61,11 @@ export const config = {
     smsDltTemplateId: process.env.SMS_INDIA_HUB_DLT_TEMPLATE_ID,
 
     // Rate limiting
+    rateLimitEnabled: process.env.RATE_LIMIT_ENABLED !== 'false',
     rateLimitWindowMinutes: Number(process.env.RATE_LIMIT_WINDOW || 15),
-    // Default 500 req/15min per identity — enough for normal multi-tab app usage
-    // (location polling, cart updates, order status pings all count against this).
-    // Requests are keyed per authenticated user where possible and only fall back
-    // to IP for anonymous traffic, so mobile-carrier NAT does not pool many real
-    // users into one bucket. See middleware/rateLimit.js.
-    rateLimitMaxRequests: Number(process.env.RATE_LIMIT_MAX || 500),
+    rateLimitMaxRequests: Number(
+        isProd ? (process.env.RATE_LIMIT_MAX || 3500) : (process.env.RATE_LIMIT_DEV_MAX || 2000),
+    ),
     authRateLimitWindowMinutes: Number(process.env.AUTH_RATE_LIMIT_WINDOW || 15),
     authRateLimitMax: Number(process.env.AUTH_RATE_LIMIT_MAX || 30),
     // High-frequency authenticated endpoints (/sync reconciliation, driver location
@@ -80,7 +78,7 @@ export const config = {
     bcryptSaltRounds: Number(process.env.BCRYPT_SALT_ROUNDS || 10),
 
     // Uploads
-    uploadPath: process.env.UPLOAD_PATH || 'uploads/',
+    uploadPath: process.env.UPLOAD_DIR || 'src/uploads',
     requestBodyLimit: process.env.REQUEST_BODY_LIMIT || '2mb',
 
     // Redis

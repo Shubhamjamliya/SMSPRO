@@ -8,10 +8,7 @@
     "build": "node scripts/generate-firebase-config.js && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "doctor": "npx react-doctor@latest",
-    "check:api-clients": "node scripts/check-api-clients.mjs",
-    "check:hook-order": "node scripts/check-hook-order.mjs",
-    "check:all": "node scripts/check-api-clients.mjs && node scripts/check-hook-order.mjs"
+    "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

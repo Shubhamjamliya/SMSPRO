@@ -1,6 +1,6 @@
 import express from 'express';
 import { upload, uploadMedia } from '../../../middleware/upload.js';
-import { uploadBufferDetailed, uploadImageBuffer } from '../../../services/cloudinary.service.js';
+import { uploadImageBuffer, uploadFileBuffer } from '../../../services/storage.service.js';
 
 const router = express.Router();
 
@@ -55,7 +55,7 @@ router.post('/image', upload.single('file'), async (req, res, next) => {
 
         // PDFs need resource_type auto; images keep existing optimized path
         const url = isPdf
-            ? (await uploadBufferDetailed(req.file.buffer, { folder, resourceType: 'auto' }))?.secure_url
+            ? await uploadFileBuffer(req.file.buffer, folder, { mimeType: mime, prefix: 'document' })
             : await uploadImageBuffer(req.file.buffer, folder);
 
         if (!url) {
@@ -72,6 +72,34 @@ router.post('/image', upload.single('file'), async (req, res, next) => {
                 url,
                 publicId: null
             }
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// POST /v1/uploads/file - generic local file upload
+router.post('/file', uploadMedia.single('file'), async (req, res, next) => {
+    try {
+        if (!req.file || !req.file.buffer) {
+            return res.status(400).json({
+                success: false,
+                message: 'No file provided',
+            });
+        }
+
+        const folder = typeof req.body?.folder === 'string' && req.body.folder.trim()
+            ? req.body.folder.trim()
+            : 'uploads';
+        const mime = String(req.file.mimetype || '').toLowerCase();
+        const url = mime.startsWith('image/')
+            ? await uploadImageBuffer(req.file.buffer, folder)
+            : await uploadFileBuffer(req.file.buffer, folder, { mimeType: mime, prefix: 'file' });
+
+        return res.status(200).json({
+            success: true,
+            message: 'File uploaded successfully',
+            data: { url, publicId: null },
         });
     } catch (error) {
         next(error);
@@ -97,18 +125,19 @@ router.post('/media', uploadMedia.single('file'), async (req, res, next) => {
         const video = isVideoMime(mime);
         const isPdf = mime === 'application/pdf';
 
-        let result;
+        let url;
+        let resourceType;
         if (video || isPdf) {
-            result = await uploadBufferDetailed(req.file.buffer, {
-                folder,
-                resourceType: video ? 'video' : 'auto',
+            url = await uploadFileBuffer(req.file.buffer, folder, {
+                mimeType: mime,
+                prefix: video ? 'video' : 'document',
             });
+            resourceType = video ? 'video' : 'raw';
         } else {
-            const url = await uploadImageBuffer(req.file.buffer, folder);
-            result = { secure_url: url, public_id: null, resource_type: 'image' };
+            url = await uploadImageBuffer(req.file.buffer, folder);
+            resourceType = 'image';
         }
 
-        const url = result?.secure_url;
         if (!url) {
             return res.status(500).json({
                 success: false,
@@ -121,8 +150,8 @@ router.post('/media', uploadMedia.single('file'), async (req, res, next) => {
             message: 'Media uploaded successfully',
             data: {
                 url,
-                publicId: result.public_id || null,
-                resourceType: result.resource_type || (video ? 'video' : 'image'),
+                publicId: null,
+                resourceType,
             },
         });
     } catch (error) {

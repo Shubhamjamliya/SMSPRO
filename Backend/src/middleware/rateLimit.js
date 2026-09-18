@@ -109,8 +109,32 @@ const normaliseIp = (ip) => {
  */
 const identityKey = (req) => {
     const userId = req.user?.userId || req.user?.id || req.user?.sub;
-    if (userId) return `u:${userId}`;
-    return `ip:${normaliseIp(req.ip)}`;
+    const clientIp = normaliseIp(req.ip);
+    if (userId) return `u:${userId}|ip:${clientIp}`;
+    return `ip:${clientIp}`;
+};
+
+const rateLimitHandler = (req, res) => {
+    logger.warn('[RateLimit] Request blocked', {
+        timestamp: new Date().toISOString(),
+        ip: req.ip,
+        route: req.originalUrl || req.url,
+        method: req.method,
+        userId: req.user?.userId || null,
+        userAgent: req.get('user-agent') || null,
+    });
+    return res.status(429).json({
+        success: false,
+        message: 'Too many requests. Please try again later.',
+    });
+};
+
+const commonLimiterOptions = {
+    standardHeaders: false,
+    legacyHeaders: false,
+    passOnStoreError: true,
+    skip: () => !config.rateLimitEnabled,
+    handler: rateLimitHandler,
 };
 
 /**
@@ -128,21 +152,26 @@ const windowMs = config.rateLimitWindowMinutes * 60 * 1000;
 
 export const apiRateLimiter = rateLimit({
     windowMs,
-    // Dev UX: local UI can generate lots of background API calls (location, polling, etc).
-    // Keep production strict, but avoid blocking local development.
-    max: config.nodeEnv === 'development' ? Math.max(config.rateLimitMaxRequests, 2000) : config.rateLimitMaxRequests,
-    standardHeaders: true,
-    legacyHeaders: false,
-    // If the store errors out, fail OPEN (allow the request) rather than 500-ing all API traffic.
-    passOnStoreError: true,
+    max: config.rateLimitMaxRequests,
+    ...commonLimiterOptions,
     store: new LazyRedisStore('rl:api:'),
     // Runs before authMiddleware, so this stays IP-keyed on purpose (see identityKey).
     keyGenerator: (req) => normaliseIp(req.ip),
-    skip: isWebhookPath,
+    skip: (req) => isWebhookPath(req) || !config.rateLimitEnabled,
     message: {
         success: false,
         message: 'Too many requests, please try again later.'
     }
+});
+
+/** Private APIs: authenticated user ID + real client IP. */
+export const privateRateLimiter = rateLimit({
+    windowMs,
+    max: config.rateLimitMaxRequests,
+    ...commonLimiterOptions,
+    store: new LazyRedisStore('rl:private:'),
+    keyGenerator: identityKey,
+    message: { success: false, message: 'Too many requests. Please try again later.' },
 });
 
 /**
@@ -152,15 +181,10 @@ export const apiRateLimiter = rateLimit({
 export const webhookRateLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 600,
-    standardHeaders: true,
-    legacyHeaders: false,
-    passOnStoreError: true,
+    ...commonLimiterOptions,
     store: new LazyRedisStore('rl:webhook:'),
     keyGenerator: (req) => normaliseIp(req.ip),
-    message: {
-        success: false,
-        message: 'Webhook rate limit exceeded.'
-    }
+    message: { success: false, message: 'Too many requests. Please try again later.' },
 });
 
 const authWindowMs = config.authRateLimitWindowMinutes * 60 * 1000;
@@ -168,26 +192,12 @@ const authWindowMs = config.authRateLimitWindowMinutes * 60 * 1000;
 /** Stricter rate limit for auth routes (OTP, login, refresh, logout). Applied in addition to global limiter. */
 export const authRateLimiter = rateLimit({
     windowMs: authWindowMs,
-    // Dev UX: login/otp testing can be frequent. Keep production strict (e.g. 30),
-    // but relax local development to avoid 429 when testing flows.
-    max: config.nodeEnv === 'development' ? Math.max(config.authRateLimitMax, 100) : config.authRateLimitMax,
-    standardHeaders: true,
-    legacyHeaders: false,
-    passOnStoreError: true,
+    max: config.authRateLimitMax,
+    ...commonLimiterOptions,
     store: new LazyRedisStore('rl:auth:'),
-    // Auth routes are pre-authentication, so bucket by IP *and* the identifier being
-    // targeted. Without the identifier, one NAT'd carrier IP locks out every real
-    // user behind it; without the IP, an attacker sprays across many phone numbers.
-    // Keying on both means neither dimension alone can exhaust the other's budget.
-    // Per-phone OTP issuance is additionally capped in core/otp/otp.service.js.
-    keyGenerator: (req) => {
-        const identifier = req.body?.phone || req.body?.email || req.body?.username || '';
-        return `${normaliseIp(req.ip)}|${String(identifier).trim().toLowerCase()}`;
-    },
-    message: {
-        success: false,
-        message: 'Too many authentication attempts. Please try again later.'
-    }
+    // Auth routes are pre-authentication, so use only the real client IP.
+    keyGenerator: (req) => `ip:${normaliseIp(req.ip)}`,
+    message: { success: false, message: 'Too many requests. Please try again later.' },
 });
 
 /**
@@ -198,9 +208,7 @@ export const authRateLimiter = rateLimit({
 export const sensitiveActionRateLimiter = rateLimit({
     windowMs: 5 * 60 * 1000,
     max: config.nodeEnv === 'development' ? 300 : 30,
-    standardHeaders: true,
-    legacyHeaders: false,
-    passOnStoreError: true,
+    ...commonLimiterOptions,
     store: new LazyRedisStore('rl:sensitive:'),
     // Every mount point for this limiter sits behind authMiddleware, so we can bucket
     // per user. 30 orders / 5 min is a sane per-account ceiling but would be a hard
@@ -223,9 +231,7 @@ export const realtimeRateLimiter = rateLimit({
     max: config.nodeEnv === 'development'
         ? Math.max(config.realtimeRateLimitMax, 1000)
         : config.realtimeRateLimitMax,
-    standardHeaders: true,
-    legacyHeaders: false,
-    passOnStoreError: true,
+    ...commonLimiterOptions,
     store: new LazyRedisStore('rl:realtime:'),
     keyGenerator: identityKey,
     message: {
@@ -242,9 +248,7 @@ export const realtimeRateLimiter = rateLimit({
 export const registrationRateLimiter = rateLimit({
     windowMs: 60 * 60 * 1000,
     max: config.nodeEnv === 'development' ? 100 : 10,
-    standardHeaders: true,
-    legacyHeaders: false,
-    passOnStoreError: true,
+    ...commonLimiterOptions,
     store: new LazyRedisStore('rl:register:'),
     // Pre-authentication (or mid-onboarding), so IP is the only trustworthy signal.
     keyGenerator: (req) => normaliseIp(req.ip),

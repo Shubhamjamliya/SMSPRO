@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
+import { getImageUrl } from '../utils/getImageUrl';
 
 const LazyImage = ({ src, alt = '', className = '', ...rest }) => {
   const [loaded, setLoaded] = useState(false);
 
   return (
     <img
-      src={src}
+      src={getImageUrl(src)}
       alt={alt}
       loading="lazy"
       onLoad={() => setLoaded(true)}
@@ -16,4 +17,3 @@ const LazyImage = ({ src, alt = '', className = '', ...rest }) => {
 };
 
 export default LazyImage;
-

@@ -4,6 +4,7 @@ import { FoodUser } from '../users/user.model.js';
 import { Driver } from '../models/driver.model.js';
 import { FoodAdmin } from '../admin/admin.model.js';
 import { AdminRole } from '../admin/role.model.js';
+import { privateRateLimiter } from '../../middleware/rateLimit.js';
 
 export const requireAdmin = (req, res, next) => {
     if (req.user?.role !== 'ADMIN') {
@@ -32,7 +33,7 @@ export const authMiddleware = (req, res, next) => {
                 if (!doc || doc.isActive === false) {
                     return sendError(res, 401, 'User account is deactivated');
                 }
-                next();
+                privateRateLimiter(req, res, next);
             }).catch(() => sendError(res, 401, 'Authentication failed'));
             return;
         }
@@ -51,18 +52,18 @@ export const authMiddleware = (req, res, next) => {
                     }
                     if (isOnboardingScope) {
                         req.user.authorizedServices = doc.authorizedServices || [];
-                        return next();
+                        return privateRateLimiter(req, res, next);
                     }
                     if (doc.isActive === false) {
                         return sendError(res, 401, 'Delivery account is inactive');
                     }
                     req.user.authorizedServices = doc.authorizedServices || [];
-                    next();
+                    privateRateLimiter(req, res, next);
                 })
                 .catch(() => sendError(res, 401, 'Authentication failed'));
             return;
         }
-        return next();
+        return privateRateLimiter(req, res, next);
     } catch (error) {
         return sendError(res, 401, 'Invalid or expired token');
     }

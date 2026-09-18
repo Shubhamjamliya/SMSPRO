@@ -8,6 +8,7 @@ node_modules/
 !.env.example
 
 *.log
+src/uploads/
 dist/
 coverage/
 .DS_Store
