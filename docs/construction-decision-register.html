@@ -1,0 +1,583 @@
+<title>Construction Decision Register</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+  :root {
+    --paper:      #F1F4F7;
+    --surface:    #FFFFFF;
+    --surface-2:  #E7ECF1;
+    --ink:        #131C26;
+    --ink-2:      #35434F;
+    --muted:      #5A6875;
+    --faint:      #8494A1;
+    --rule:       #D2DAE2;
+    --rule-soft:  #E3E9EE;
+    --accent:     #0F6E8C;
+    --accent-ink: #0A5169;
+    --accent-wash:#DCEAF0;
+    --built:      #2E7D5B;
+    --built-wash: #DCEDE4;
+    --sched:      #7A6A2E;
+    --sched-wash: #EEE8D4;
+    --blocked:    #A6472F;
+    --blocked-wash:#F3DFD9;
+
+    --f-display: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+    --f-body:    'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --f-mono:    'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0E141A;
+      --surface:    #161F28;
+      --surface-2:  #1E2A35;
+      --ink:        #E8EEF3;
+      --ink-2:      #C3CFD9;
+      --muted:      #93A3B0;
+      --faint:      #6C7C89;
+      --rule:       #2B3945;
+      --rule-soft:  #222E39;
+      --accent:     #4FB3D4;
+      --accent-ink: #8FD2E8;
+      --accent-wash:#12313E;
+      --built:      #5CBF90;
+      --built-wash: #133024;
+      --sched:      #CBB264;
+      --sched-wash: #2E2814;
+      --blocked:    #E08265;
+      --blocked-wash:#38201A;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #0E141A;
+    --surface:    #161F28;
+    --surface-2:  #1E2A35;
+    --ink:        #E8EEF3;
+    --ink-2:      #C3CFD9;
+    --muted:      #93A3B0;
+    --faint:      #6C7C89;
+    --rule:       #2B3945;
+    --rule-soft:  #222E39;
+    --accent:     #4FB3D4;
+    --accent-ink: #8FD2E8;
+    --accent-wash:#12313E;
+    --built:      #5CBF90;
+    --built-wash: #133024;
+    --sched:      #CBB264;
+    --sched-wash: #2E2814;
+    --blocked:    #E08265;
+    --blocked-wash:#38201A;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 16px;
+    line-height: 1.6;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 940px; margin: 0 auto; padding: 0 24px 96px; }
+
+  /* ---------- title block ---------- */
+  .titleblock { border: 1.5px solid var(--ink); background: var(--surface); margin: 40px 0 26px; }
+  .tb-main { padding: 30px 28px 26px; border-bottom: 1.5px solid var(--ink); }
+  .tb-eyebrow {
+    font-family: var(--f-mono); font-size: 11px; font-weight: 500;
+    letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin: 0 0 14px;
+  }
+  h1 {
+    font-family: var(--f-display); font-weight: 800;
+    font-size: clamp(29px, 5vw, 48px); line-height: 1.03; letter-spacing: -0.025em;
+    text-wrap: balance; margin: 0 0 14px;
+  }
+  .tb-sub { font-size: 16px; color: var(--muted); max-width: 60ch; margin: 0; }
+  .tb-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .tb-cell { padding: 13px 18px; border-right: 1px solid var(--rule); }
+  .tb-cell:last-child { border-right: none; }
+  .tb-k {
+    font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--faint); display: block; margin-bottom: 3px;
+  }
+  .tb-v { font-family: var(--f-mono); font-size: 13px; font-weight: 500; color: var(--ink-2); }
+
+  /* ---------- priority callout ---------- */
+  .priority {
+    border: 1.5px solid var(--blocked);
+    background: var(--blocked-wash);
+    padding: 20px 24px;
+    margin-bottom: 50px;
+  }
+  .priority h2 {
+    font-family: var(--f-display); font-weight: 700; font-size: 18px;
+    margin: 0 0 10px; letter-spacing: -0.01em; border: none; padding: 0;
+  }
+  .priority p { margin: 0 0 10px; font-size: 15px; color: var(--ink-2); line-height: 1.55; }
+  .priority p:last-child { margin-bottom: 0; }
+  .priority strong { color: var(--ink); }
+
+  /* ---------- sections ---------- */
+  section { margin-bottom: 56px; }
+  .sec-head {
+    border-top: 1.5px solid var(--ink); padding-top: 14px; margin-bottom: 10px;
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  }
+  .sec-no {
+    font-family: var(--f-mono); font-size: 12px; font-weight: 600;
+    color: var(--accent); letter-spacing: 0.08em;
+  }
+  h2 {
+    font-family: var(--f-display); font-weight: 700;
+    font-size: clamp(20px, 3vw, 26px); letter-spacing: -0.02em;
+    line-height: 1.15; margin: 0; text-wrap: balance;
+  }
+  .sec-count { font-family: var(--f-mono); font-size: 12px; color: var(--faint); margin-left: auto; }
+  .sec-intro { color: var(--muted); max-width: 66ch; margin: 0 0 24px; font-size: 15.5px; }
+
+  /* ---------- decision entries ---------- */
+  .entry {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    margin-bottom: 14px;
+  }
+  .entry-head {
+    display: flex; gap: 14px; align-items: flex-start;
+    padding: 16px 20px 14px;
+    border-bottom: 1px solid var(--rule-soft);
+    flex-wrap: wrap;
+  }
+  .entry-ref {
+    font-family: var(--f-mono); font-size: 13px; font-weight: 600;
+    color: var(--accent); padding-top: 2px; white-space: nowrap;
+  }
+  .entry-q {
+    font-family: var(--f-display); font-weight: 600; font-size: 17.5px;
+    letter-spacing: -0.012em; line-height: 1.3; margin: 0; flex: 1 1 300px;
+    text-wrap: balance;
+  }
+  .entry-body { padding: 4px 20px 18px; }
+
+  .rec {
+    display: grid; grid-template-columns: auto 1fr; gap: 12px;
+    align-items: start;
+    padding: 14px 0 12px;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .rec-label {
+    font-family: var(--f-mono); font-size: 9.5px; letter-spacing: 0.11em;
+    text-transform: uppercase; color: var(--faint); padding-top: 4px;
+    width: 76px;
+  }
+  .rec-value {
+    font-weight: 600; font-size: 16px; color: var(--ink); line-height: 1.4;
+  }
+  .rec-value em {
+    display: block; font-style: normal; font-weight: 400; font-size: 14.5px;
+    color: var(--muted); margin-top: 6px; line-height: 1.55;
+  }
+
+  .why { padding: 13px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 12px; }
+  .why + .why { padding-top: 11px; }
+  .why-label {
+    font-family: var(--f-mono); font-size: 9.5px; letter-spacing: 0.11em;
+    text-transform: uppercase; color: var(--faint); padding-top: 3px; width: 76px;
+  }
+  .why-text { font-size: 14.5px; color: var(--ink-2); line-height: 1.55; }
+  .why-text code {
+    font-family: var(--f-mono); font-size: 12.5px;
+    background: var(--surface-2); padding: 1px 5px; color: var(--ink);
+  }
+
+  .pill {
+    font-family: var(--f-mono); font-size: 10px; font-weight: 500;
+    letter-spacing: 0.05em; padding: 3px 7px; border: 1px solid;
+    white-space: nowrap; display: inline-block;
+  }
+  .p-block  { color: var(--blocked); border-color: var(--blocked); background: var(--blocked-wash); }
+  .p-sched  { color: var(--sched);   border-color: var(--sched);   background: var(--sched-wash); }
+  .p-built  { color: var(--built);   border-color: var(--built);   background: var(--built-wash); }
+  .p-accent { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-wash); }
+
+  /* ---------- ask list ---------- */
+  .asks { list-style: none; margin: 0; padding: 0; counter-reset: ask; border-top: 1px solid var(--rule); }
+  .asks li {
+    counter-increment: ask;
+    display: grid; grid-template-columns: 40px 1fr; gap: 14px;
+    padding: 14px 0; border-bottom: 1px solid var(--rule-soft); align-items: start;
+  }
+  .asks li::before {
+    content: counter(ask, decimal-leading-zero);
+    font-family: var(--f-mono); font-size: 12px; font-weight: 600;
+    color: var(--accent); padding-top: 3px; font-variant-numeric: tabular-nums;
+  }
+  .asks strong { font-weight: 600; display: block; margin-bottom: 3px; }
+  .asks p { margin: 0; color: var(--muted); font-size: 14.5px; line-height: 1.5; }
+
+  footer {
+    border-top: 1.5px solid var(--ink); padding-top: 18px;
+    font-family: var(--f-mono); font-size: 11.5px; color: var(--faint); line-height: 1.7;
+  }
+
+  a { color: var(--accent); }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  @media (max-width: 600px) {
+    .rec, .why { grid-template-columns: 1fr; gap: 5px; }
+    .rec-label, .why-label { width: auto; padding-top: 0; }
+  }
+</style>
+
+<div class="wrap">
+
+  <div class="titleblock">
+    <div class="tb-main">
+      <p class="tb-eyebrow">SMS Pro Ecosystem · Module 01 · Construction</p>
+      <h1>Decision Register</h1>
+      <p class="tb-sub">Twenty questions the BRD left open, each with our recommendation and what changes if you decide otherwise. Written so you can reply with a yes, a no, or a correction — not a specification.</p>
+    </div>
+    <div class="tb-grid">
+      <div class="tb-cell"><span class="tb-k">Open items</span><span class="tb-v">20</span></div>
+      <div class="tb-cell"><span class="tb-k">Truly blocking</span><span class="tb-v">2</span></div>
+      <div class="tb-cell"><span class="tb-k">Settled by config</span><span class="tb-v">6</span></div>
+      <div class="tb-cell"><span class="tb-k">Build status</span><span class="tb-v">Phase 0–1 done</span></div>
+      <div class="tb-cell"><span class="tb-k">Revision</span><span class="tb-v">A · 22 Aug 2026</span></div>
+    </div>
+  </div>
+
+  <div class="priority">
+    <h2>If you only answer two, answer these</h2>
+    <p><strong>Q10 — sub-contractor payments.</strong> This one is cheap today and expensive in a month. If a main contractor can pay specialists through the app, the money layer becomes a payment tree instead of a straight line — and that layer is already built. Changing it later means rebuilding tested code.</p>
+    <p><strong>Q8 — your legal position on holding customer money.</strong> The mechanism works and is tested. Whether SMS Pro Venture may legally hold customer funds in India is a regulatory question we cannot answer for you, and it gates the entire payment model going live.</p>
+  </div>
+
+  <!-- ============ BLOCKING ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-no">01</span>
+      <h2>The eight that were blocking</h2>
+      <span class="sec-count">Q1–Q8</span>
+    </div>
+    <p class="sec-intro">Six of these are now answered — either by reading the code, or by making the decision a setting you control rather than something we hardcode. Two still need you.</p>
+
+    <div class="entry">
+      <div class="entry-head">
+        <span class="entry-ref">Q1</span>
+        <h3 class="entry-q">Is construction a full project system, or just another service booking?</h3>
+        <span class="pill p-built">SETTLED</span>
+      </div>
+      <div class="entry-body">
+        <div class="rec"><span class="rec-label">Our answer</span><span class="rec-value">A full project system.
+          <em>Not a judgement call — we checked the code. Every model in the platform is a short-lived order, ride or booking. Nothing models a job that runs for months in stages.</em></span></div>
+        <div class="why"><span class="why-label">Why</span><span class="why-text">A food order lives for 40 minutes and has one payment. A house lives for a year and has ten. Bolting construction onto the booking pattern would mean rewriting it within six months.</span></div>
+        <div class="why"><span class="why-label">Cost</span><span class="why-text">This is why the module is 18 data models and 8 build phases rather than 3 and 2. It is the single largest driver of timeline.</span></div>
+      </div>
+    </div>
+
+    <div class="entry">
+      <div class="entry-head">
+        <span class="entry-ref">Q2</span>
+        <h3 class="entry-q">How do we handle the one-category-at-a-time rule for long projects?</h3>
+        <span class="pill p-built">NO CHANGE NEEDED</span>
+      </div>
+      <div class="entry-body">
+        <div class="rec"><span class="rec-label">Our answer</span><span class="rec-value">Nothing needs to change. The problem described in the BRD does not exist in the code.
+          <em>The existing rule limits a provider's <strong>catalogue</strong> to one category. It does not trigger when a job is accepted, and approved providers can change their selection at any time. No provider is ever locked by an in-flight job.</em></span></div>
+        <div class="why"><span class="why-label">Instead</span><span class="why-text">Contractors get their own profile type and are not subject to that rule at all. They declare multiple trades and a maximum number of concurrent projects — which is the honest version of the same idea.</span></div>
+        <div class="why"><span class="why-label">Cost</span><span class="why-text">Zero. This was flagged as a blocker; it is not one.</span></div>
+      </div>
+    </div>
+
+    <div class="entry">
+      <div class="entry-head">
+        <span class="entry-ref">Q3</span>
+        <h3 class="entry-q">What construction services will you actually offer?</h3>
+        <span class="pill p-accent">YOUR LIST</span>
+      </div>
+      <div class="entry-body">
+        <div class="rec"><span class="rec-label">Our answer</span><span class="rec-value">You fill this in yourself, through the admin screen. We are not hardcoding it.
+          <em>A starter list to design against: New Building Construction · Renovation &amp; Remodelling · Interior Fit-out · Structural Repair &amp; Waterproofing · Extension or Additional Floor · Commercial &amp; Shop Fit-out · Boundary Wall &amp; External Works · Turnkey House</em></span></div>
+        <div class="why"><span class="why-label">Why</span><span class="why-text">Your service list will change often, and it should never need a software release. This was already a requirement in its own right (A8).</span></div>
+        <div class="why"><span class="why-label">We need</span><span class="why-text">Correct or replace the eight above. Category and sub-category names are enough — descriptions can come later.</span></div>
+      </div>
+    </div>
+
+    <div class="entry">
+      <div class="entry-head">
+        <span class="entry-ref">Q4</span>
+        <h3 class="entry-q">Does the customer choose the contractor, or does the app assign one?</h3>
+        <span class="pill p-sched">CONFIRM BY PHASE 4</span>
+      </div>
+      <div class="entry-body">
+        <div class="rec"><span class="rec-label">Our answer</span><span class="rec-value">The app shortlists three to five verified contractors; the customer chooses from that shortlist.
+          <em>This matches the BRD's own recommendation, and it is what the design currently assumes.</em></span></div>
+        <div class="why"><span class="why-label">Why</span><span class="why-text">Assignment works for a plumber because the job is commoditised and cheap. A house is neither. Being able to compare and choose is the main reason a customer uses a platform rather than asking a relative.</span></div>
+        <div class="why"><span class="why-label">Otherwise</span><span class="why-text">Pure assignment removes the browse, profile, filter and compare screens — roughly a week less work, but it also removes most of what makes the module worth using.</span></div>
+      </div>
+    </div>
+
+    <div class="entry">
+      <div class="entry-head">
+        <span class="entry-ref">Q5</span>
+        <h3 class="entry-q">Can several contractors quote for the same enquiry?</h3>
+        <span class="pill p-accent">A SETTING</span>
+      </div>
+      <div class="entry-body">
+        <div class="rec"><span class="rec-label">Our answer</span><span class="rec-value">Yes — capped at three, and adjustable.
+          <em>Uncapped competition means contractors spend days on site visits they mostly lose, and they stop responding. Three is enough to make comparison meaningful without burning your supply side.</em></span></div>
+        <div class="why"><span class="why-label">Why</span><span class="why-text">Side-by-side quote comparison is one of the strongest features in the module. It only exists if more than one contractor can quote.</span></div>
+        <div class="why"><span class="why-label">Cost</span><span class="why-text">None — it is already a configurable number. Set it to 1 and comparison simply disappears.</span></div>
+      </div>
+    </div>
+
+    <div class="entry">
+      <div class="entry-head">
+        <span class="entry-ref">Q6</span>
+        <h3 class="entry-q">What exactly goes into a quotation?</h3>
+        <span class="pill p-accent">SEND ONE SAMPLE</span>
+      </div>
+      <div class="entry-body">
+        <div class="rec"><span class="rec-label">Our answer</span><span class="rec-value">Sections, then line items: description, quantity, unit, rate, amount. Then subtotal, tax, total, validity period, inclusions, exclusions, and the proposed payment stages.
+          <em>Line-item columns and standard terms are admin-editable, so you can reshape the quote without a release.</em></span></div>
+        <div class="why"><span class="why-label">We need</span><span class="why-text">One real quotation in the format you want. That single document is worth more than a page of written answers — it settles column names, tax presentation and terms in one go.</span></div>
+      </div>
+    </div>
+
+    <div class="entry">
+      <div class="entry-head">
+        <span class="entry-ref">Q7</span>
+        <h3 class="entry-q">Who decides the stages and their payment percentages?</h3>
+        <span class="pill p-accent">A SETTING</span>
+      </div>
+      <div class="entry-body">
+        <div class="rec"><span class="rec-label">Our answer</span><span class="rec-value">The contractor proposes them in the quote, within limits you set.
+          <em>Suggested guardrails: between 3 and 12 stages · no single stage worth more than 40% · first stage no more than 20% · final stage at least 10%.</em></span></div>
+        <div class="why"><span class="why-label">Why</span><span class="why-text">Stage structure genuinely differs between a bathroom renovation and a two-floor build, so a fixed platform template would be wrong half the time. The guardrails are what stop a contractor writing "70% on mobilisation" — which is the abuse the staged model exists to prevent.</span></div>
+        <div class="why"><span class="why-label">Otherwise</span><span class="why-text">You can switch to platform-fixed templates per service type, or full per-project negotiation. Both are supported; the flexible middle is the one we would ship first.</span></div>
+      </div>
+    </div>
+
+    <div class="entry">
+      <div class="entry-head">
+        <span class="entry-ref">Q8</span>
+        <h3 class="entry-q">Confirm the money-holding model and what releases the funds.</h3>
+        <span class="pill p-block">BLOCKING</span>
+      </div>
+      <div class="entry-body">
+        <div class="rec"><span class="rec-label">Our answer</span><span class="rec-value">The mechanism is built and tested. The legal position is yours to confirm, in writing, before it touches real money.
+          <em>Money is held in the customer's own wallet and marked reserved — it never moves to a platform account until a stage is approved. That distinction may matter a great deal to your legal advice.</em></span></div>
+        <div class="why"><span class="why-label">Release trigger</span><span class="why-text">Customer approval of a photographed, dated stage. See Q13 for what happens when a customer simply does not respond.</span></div>
+        <div class="why"><span class="why-label">If holding is not permitted</span><span class="why-text">Two fallbacks: route funds through a licensed escrow provider (a different integration, roughly two weeks), or drop holding entirely and use the platform only to confirm milestones while the customer pays the contractor directly. The second is much weaker — it gives up the guarantee that makes the module trustworthy.</span></div>
+        <div class="why"><span class="why-label">We need</span><span class="why-text">Written confirmation that you intend to hold customer funds, and on what legal basis. Not a verbal yes.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ IMPORTANT ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-no">02</span>
+      <h2>Important, but not blocking</h2>
+      <span class="sec-count">Q9–Q16</span>
+    </div>
+    <p class="sec-intro">These shape the product rather than stop it. Q10 is the exception — it is here in the BRD's ordering, but it affects code that already exists, so it should be answered now.</p>
+
+    <div class="entry">
+      <div class="entry-head">
+        <span class="entry-ref">Q9</span>
+        <h3 class="entry-q">Can contractors be companies with several staff logins?</h3>
+        <span class="pill p-sched">LATER</span>
+      </div>
+      <div class="entry-body">
+        <div class="rec"><span class="rec-label">Our answer</span><span class="rec-value">Design it in now, build it later. One owner login at launch.
+          <em>The project record already carries a participant list with separate permissions, so adding staff logins later needs no migration and breaks nothing.</em></span></div>
+        <div class="why"><span class="why-label">Why</span><span class="why-text">Multi-user contractor firms need their own invite, role and permission screens — a meaningful amount of work for something most contractors will not use in the first year. Build it when a firm actually asks.</span></div>
+      </div>
+    </div>
+
+    <div class="entry">
+      <div class="entry-head">
+        <span class="entry-ref">Q10</span>
+        <h3 class="entry-q">Can a main contractor bring in sub-contractors through the app?</h3>
+        <span class="pill p-block">ANSWER NOW</span>
+      </div>
+      <div class="entry-body">
+        <div class="rec"><span class="rec-label">Our answer</span><span class="rec-value">No — the main contractor is solely responsible and pays their own specialists off-platform.
+          <em>If you disagree, say so this week rather than in two months.</em></span></div>
+        <div class="why"><span class="why-label">Why it is urgent</span><span class="why-text">Paying sub-contractors through the app turns the money layer from a straight line into a branching tree: one held amount splitting to several payees, each needing its own approval, dispute path and tax treatment. That layer is already built and tested. Changing it later means rebuilding working code.</span></div>
+        <div class="why"><span class="why-label">If you want it</span><span class="why-text">Roughly two extra weeks on the payment layer, plus a materially harder dispute model — when a sub-contractor is unpaid, who does the customer hold responsible? Our recommendation is to keep that question out of your platform.</span></div>
+      </div>
+    </div>
+
+    <div class="entry">
+      <div class="entry-head">
+        <span class="entry-ref">Q11</span>
+        <h3 class="entry-q">Is the site visit free or charged?</h3>
+        <span class="pill p-accent">A SETTING</span>
+      </div>
+      <div class="entry-body">
+        <div class="rec"><span class="rec-label">Our answer</span><span class="rec-value">Free at launch. Build the fee and its refund rule, but leave them switched off.</span></div>
+        <div class="why"><span class="why-label">Why</span><span class="why-text">A charge at the site-visit step is friction at exactly the moment you are still proving the platform works. Switch it on later, when customer demand outstrips contractor supply and no-shows start costing you.</span></div>
+      </div>
+    </div>
+
+    <div class="entry">
+      <div class="entry-head">
+        <span class="entry-ref">Q12</span>
+        <h3 class="entry-q">How is GST shown on quotes and settlements?</h3>
+        <span class="pill p-sched">NEEDS YOUR CA</span>
+      </div>
+      <div class="entry-body">
+        <div class="rec"><span class="rec-label">Our answer</span><span class="rec-value">Tax shown exclusive — per line item and again in the summary. The contractor invoices the customer; the platform invoices the contractor for its commission.
+          <em>This treats you as a facilitator rather than the supplier of construction services, which is the lighter position.</em></span></div>
+        <div class="why"><span class="why-label">We need</span><span class="why-text">Your accountant to confirm that invoicing direction. It changes who issues what document, and it is not a decision developers should make.</span></div>
+      </div>
+    </div>
+
+    <div class="entry">
+      <div class="entry-head">
+        <span class="entry-ref">Q13</span>
+        <h3 class="entry-q">Who confirms a stage is genuinely complete?</h3>
+        <span class="pill p-accent">A SETTING</span>
+      </div>
+      <div class="entry-body">
+        <div class="rec"><span class="rec-label">Our answer</span><span class="rec-value">The customer approves. If they do not respond within seven days, it escalates to your supervisor, who can approve on the photographic evidence.
+          <em>This is the single most important fairness setting in the module.</em></span></div>
+        <div class="why"><span class="why-label">Why</span><span class="why-text">The BRD raises this risk itself: if the customer alone can approve, a difficult customer can withhold a contractor's payment indefinitely for no good reason. Word of that spreads through a contractor network faster than anything else, and your supply side disappears.</span></div>
+        <div class="why"><span class="why-label">Otherwise</span><span class="why-text">Customer-only approval is simpler and more appealing to customers, but it makes the platform unattractive to exactly the good contractors you most want. Supervisor-required is the opposite trade. The escalation model gets most of both.</span></div>
+      </div>
+    </div>
+
+    <div class="entry">
+      <div class="entry-head">
+        <span class="entry-ref">Q14</span>
+        <h3 class="entry-q">What happens when the customer changes their mind mid-project?</h3>
+        <span class="pill p-sched">BUILD IT · PHASE 5</span>
+      </div>
+      <div class="entry-body">
+        <div class="rec"><span class="rec-label">Our answer</span><span class="rec-value">Variation orders, built in Phase 5 rather than deferred.
+          <em>A variation is a small addendum to the original quote. Once the customer accepts it, the agreed price adjusts and stages are added or resized.</em></span></div>
+        <div class="why"><span class="why-label">Why not later</span><span class="why-text">Scope change is not an edge case in construction, it is near-certain. Without a mechanism the agreed price cannot legitimately change — so both sides settle it over the phone and in cash, and your record of the project stops being true. That undermines every other guarantee the module makes.</span></div>
+      </div>
+    </div>
+
+    <div class="entry">
+      <div class="entry-head">
+        <span class="entry-ref">Q15</span>
+        <h3 class="entry-q">What happens when the two sides disagree?</h3>
+        <span class="pill p-sched">BUILD IT · PHASE 6</span>
+      </div>
+      <div class="entry-body">
+        <div class="rec"><span class="rec-label">Our answer</span><span class="rec-value">A simple dispute path, not an arbitration system. Either side raises a dispute on a stage; that stage's money freezes; your team reviews the evidence and resolves it by releasing, refunding, or splitting.
+          <em>Freezing is already supported by the payment layer — a disputed stage simply never reaches its release step.</em></span></div>
+        <div class="why"><span class="why-label">Why</span><span class="why-text">There is no dispute process anywhere on the platform today. With projects worth lakhs, every disagreement otherwise becomes a phone call to your office with no record and no neutral position to stand on.</span></div>
+        <div class="why"><span class="why-label">Keep it small</span><span class="why-text">Resist appeal tiers and formal arbitration. One review step by your team covers almost every real case.</span></div>
+      </div>
+    </div>
+
+    <div class="entry">
+      <div class="entry-head">
+        <span class="entry-ref">Q16</span>
+        <h3 class="entry-q">What documents must the app store?</h3>
+        <span class="pill p-accent">CONFIRM LIST</span>
+      </div>
+      <div class="entry-body">
+        <div class="rec"><span class="rec-label">Our answer</span><span class="rec-value">Agreement or contract · approved drawings · government approvals and permits · structural certificates · material bills · completion certificate · warranty documents · site photographs.
+          <em>The list is admin-editable, so add categories as you learn what people actually upload.</em></span></div>
+        <div class="why"><span class="why-label">Why it matters</span><span class="why-text">These papers are needed years later — for resale, insurance or repairs — and most people lose them. Storing them well is quietly one of the module's most valuable features.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CONFIRM ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-no">03</span>
+      <h2>Just confirm</h2>
+      <span class="sec-count">Q17–Q20</span>
+    </div>
+    <p class="sec-intro">We have assumed an answer to each of these. A one-word reply is enough unless you disagree.</p>
+
+    <div class="entry">
+      <div class="entry-head">
+        <span class="entry-ref">Q17</span>
+        <h3 class="entry-q">Are materials, machinery rental or labour management wanted in this phase?</h3>
+        <span class="pill p-accent">ASSUMED NO</span>
+      </div>
+      <div class="entry-body">
+        <div class="rec"><span class="rec-label">Our answer</span><span class="rec-value">No — explicitly out of scope.</span></div>
+        <div class="why"><span class="why-label">Why</span><span class="why-text">Each is a module in its own right. Material supply in particular would roughly double the size of this one, and it brings inventory, delivery and returns with it. Better as Module 09 than as a bolt-on here.</span></div>
+      </div>
+    </div>
+
+    <div class="entry">
+      <div class="entry-head">
+        <span class="entry-ref">Q18</span>
+        <h3 class="entry-q">Should a finished project automatically become a maintenance customer?</h3>
+        <span class="pill p-accent">ASSUMED: OFFER, NOT AUTO</span>
+      </div>
+      <div class="entry-body">
+        <div class="rec"><span class="rec-label">Our answer</span><span class="rec-value">Offer it at handover. Do not enrol them automatically.</span></div>
+        <div class="why"><span class="why-label">Why</span><span class="why-text">Auto-enrolling someone into a paid plan they did not ask for is a trust problem, and probably a consent problem. Offering an AMC on the handover screen — right when they are happiest with the work — costs almost nothing to build and converts better anyway.</span></div>
+      </div>
+    </div>
+
+    <div class="entry">
+      <div class="entry-head">
+        <span class="entry-ref">Q19</span>
+        <h3 class="entry-q">Do contractors use the same app as plumbers and electricians?</h3>
+        <span class="pill p-built">ALREADY ANSWERED</span>
+      </div>
+      <div class="entry-body">
+        <div class="rec"><span class="rec-label">Our answer</span><span class="rec-value">Same app, separate login and separate screens.
+          <em>This is exactly how your Service Provider module already works, so the pattern is proven rather than invented.</em></span></div>
+        <div class="why"><span class="why-label">Cost</span><span class="why-text">No second app to build, publish or maintain. Contractors get an experience built for them without you carrying another release pipeline.</span></div>
+      </div>
+    </div>
+
+    <div class="entry">
+      <div class="entry-head">
+        <span class="entry-ref">Q20</span>
+        <h3 class="entry-q">Should construction sites have their own QR code?</h3>
+        <span class="pill p-accent">ASSUMED: LATER</span>
+      </div>
+      <div class="entry-body">
+        <div class="rec"><span class="rec-label">Our answer</span><span class="rec-value">A genuine fit, but not on the critical path. Revisit after launch.</span></div>
+        <div class="why"><span class="why-label">Why</span><span class="why-text">You already have a QR Safety module, and a site QR that lets a contractor check in and shows site details would slot in naturally. It just does not earn its place ahead of quotes, stages or payments.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ASKS ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-no">04</span>
+      <h2>What we need from you</h2>
+      <span class="sec-count">In priority order</span>
+    </div>
+    <p class="sec-intro">Nothing here needs to be formal. A reply in a message is enough for everything except the first item.</p>
+
+    <ol class="asks">
+      <li><strong>Written confirmation on holding customer money (Q8).</strong><p>The only item that needs to be in writing. It gates the payment model going live, not the build — so development continues either way.</p></li>
+      <li><strong>A yes or no on sub-contractor payments (Q10).</strong><p>Cheap this week, expensive next month. It affects code that already exists.</p></li>
+      <li><strong>Your construction service list (Q3).</strong><p>Categories and sub-categories. This unlocks the largest single block of design work.</p></li>
+      <li><strong>One sample quotation in your preferred format (Q6).</strong><p>Worth more than a written answer. It settles the columns, the tax presentation and the standard terms at once.</p></li>
+      <li><strong>Confirm the shortlist model (Q4) and stage approval escalation (Q13).</strong><p>Two sentences each. Both are reversible settings, but they shape the screens we build in Phase 4 and 5.</p></li>
+      <li><strong>Your accountant on GST invoicing direction (Q12).</strong><p>Who invoices whom. Needed before quotes go live, not before they are built.</p></li>
+    </ol>
+  </section>
+
+  <footer>
+    Construction Services · Module 01 of the SMS Pro Ecosystem<br>
+    20 open items · 2 blocking · Phases 0 and 1 built · Module flag OFF<br>
+    Companion to the Feature Schedule and the module architecture blueprint · Revision A
+  </footer>
+
+</div>

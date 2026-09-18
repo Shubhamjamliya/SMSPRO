@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ],
+      "@food/*": [
+        "./src/modules/Food/*"
+      ],
+      "@shared/*": [
+        "./src/shared/*"
+      ],
+      "@core/*": [
+        "./src/core/*"
+      ],
+      "@quickCommerce/*": [
+        "./src/modules/quickCommerce/*"
+      ],
+      "@porter/*": [
+        "./src/modules/porter/*"
+      ],
+      "@taxi/*": [
+        "./src/modules/taxi/*"
+      ],
+      "@delivery/*": [
+        "./src/modules/DeliveryV2/*"
+      ],
+      "@common/*": [
+        "./src/modules/common/*"
+      ]
+    }
+  },
+  "include": [
+    "src"
+  ]
+}

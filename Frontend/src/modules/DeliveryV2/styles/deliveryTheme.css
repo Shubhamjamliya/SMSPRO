@@ -1,0 +1,51 @@
+/* Scoped theme for Food Delivery Partner module only */
+.delivery-theme-scope {
+  --delivery-primary: #ff6a00;
+  --delivery-primary-hover: #e55f00;
+  --delivery-primary-soft: #fff4eb;
+  --delivery-surface: #ffffff;
+  --delivery-muted: #f8fafc;
+  --delivery-border: #e2e8f0;
+  --delivery-text: #0f172a;
+  --delivery-text-muted: #64748b;
+  color: var(--delivery-text);
+  background-color: var(--delivery-muted);
+}
+
+.delivery-theme-scope .delivery-card {
+  background: var(--delivery-surface);
+  border: 1px solid var(--delivery-border);
+  border-radius: 1rem;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+.delivery-theme-scope .delivery-input:focus-within {
+  border-color: var(--delivery-primary);
+  box-shadow: 0 0 0 3px rgba(255, 106, 0, 0.12);
+}
+
+@keyframes deliveryFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.delivery-animate-in {
+  animation: deliveryFadeIn 0.35s ease-out both;
+}
+
+/* Mobile feed safe areas */
+.delivery-theme-scope {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@supports (height: 100dvh) {
+  .delivery-theme-scope .delivery-feed-shell {
+    height: 100dvh;
+  }
+}

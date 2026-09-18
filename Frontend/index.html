@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+    rel="stylesheet">
+  <title>Just Order</title>
+  <script>
+    // The real title is the `companyName` from the public settings API
+    // (/common/settings/public), applied by @common/utils/businessSettings on boot.
+    // That's a network round-trip, so replay the last-known name from the same
+    // localStorage cache first — otherwise every load flashes the fallback above.
+    // Key must stay in sync with SETTINGS_KEY in src/modules/common/utils/businessSettings.js.
+    try {
+      var cachedSettings = JSON.parse(localStorage.getItem('global_business_settings') || 'null');
+      if (cachedSettings && cachedSettings.companyName) {
+        document.title = String(cachedSettings.companyName);
+      }
+      var cachedFavicon = cachedSettings && (
+        location.pathname.indexOf('/admin') !== -1 ? cachedSettings.adminFavicon :
+        location.pathname.indexOf('/restaurant') !== -1 ? cachedSettings.restaurantFavicon :
+        location.pathname.indexOf('/delivery') !== -1 ? cachedSettings.deliveryFavicon :
+        location.pathname.indexOf('/seller') !== -1 ? cachedSettings.sellerFavicon :
+        cachedSettings.userFavicon
+      );
+      var iconLink = document.querySelector("link[rel='icon']");
+      if (iconLink && cachedFavicon && cachedFavicon.url) {
+        iconLink.href = cachedFavicon.url;
+      }
+    } catch (e) { /* no cache yet — the API load below fills it in */ }
+  </script>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/index.jsx"></script>
+</body>
+
+</html>

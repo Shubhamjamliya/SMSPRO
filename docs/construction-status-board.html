@@ -1,0 +1,836 @@
+<title>Construction Module Status Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@500;600&display=swap">
+
+<style>
+  /* ---- tokens: light is the base, both themes redefine the same names ---- */
+  :root {
+    --ground: #F2F1ED;      /* cement */
+    --surface: #FFFFFF;
+    --surface-2: #FAF9F6;
+    --ink: #1A1917;
+    --ink-2: #56534D;
+    --ink-3: #8A867E;
+    --rule: #DEDBD3;
+    --rule-strong: #C6C2B8;
+
+    --done: #1F6F4A;
+    --done-bg: #E4EFE8;
+    --pending: #B45309;
+    --pending-bg: #FAEDDF;
+    --blocked: #A03028;
+    --blocked-bg: #F8E5E3;
+
+    --structure: #2D4A53;   /* slate teal — rules, eyebrows */
+    --hazard: #E8B325;      /* safety yellow, used sparingly */
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #16171A;
+      --surface: #1E2024;
+      --surface-2: #23262A;
+      --ink: #ECEAE4;
+      --ink-2: #A8A49C;
+      --ink-3: #7A766E;
+      --rule: #2E3238;
+      --rule-strong: #3D424A;
+      --done: #6FCB99;
+      --done-bg: #16301F;
+      --pending: #E9A44C;
+      --pending-bg: #33230F;
+      --blocked: #F08A80;
+      --blocked-bg: #331A18;
+      --structure: #8FB8C4;
+      --hazard: #E8B325;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #16171A;
+    --surface: #1E2024;
+    --surface-2: #23262A;
+    --ink: #ECEAE4;
+    --ink-2: #A8A49C;
+    --ink-3: #7A766E;
+    --rule: #2E3238;
+    --rule-strong: #3D424A;
+    --done: #6FCB99;
+    --done-bg: #16301F;
+    --pending: #E9A44C;
+    --pending-bg: #33230F;
+    --blocked: #F08A80;
+    --blocked-bg: #331A18;
+    --structure: #8FB8C4;
+    --hazard: #E8B325;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: 2.5rem 1.25rem 5rem;
+  }
+
+  /* ---- masthead: a site hoarding ---- */
+  .masthead {
+    border-top: 5px solid var(--structure);
+    padding-top: 1.5rem;
+    margin-bottom: 2.5rem;
+  }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--structure);
+    margin: 0 0 0.5rem;
+  }
+  h1 {
+    font-family: Oswald, "Arial Narrow", sans-serif;
+    font-weight: 600;
+    font-size: clamp(2rem, 6vw, 3.1rem);
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0 0 0.6rem;
+    text-transform: uppercase;
+  }
+  .standfirst {
+    max-width: 42rem;
+    color: var(--ink-2);
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  /* ---- summary strip ---- */
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin: 2rem 0 3rem;
+  }
+  .stat { background: var(--surface); padding: 1rem 1.1rem; }
+  .stat .n {
+    font-family: Oswald, sans-serif;
+    font-size: 2rem;
+    font-weight: 600;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    display: block;
+  }
+  .stat .l {
+    font-size: 0.75rem;
+    color: var(--ink-2);
+    display: block;
+    margin-top: 0.35rem;
+  }
+  .stat.is-done .n { color: var(--done); }
+  .stat.is-pending .n { color: var(--pending); }
+
+  /* ---- sections ---- */
+  section { margin-bottom: 3rem; }
+  h2 {
+    font-family: Oswald, sans-serif;
+    font-weight: 500;
+    font-size: 1.35rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    margin: 0 0 0.25rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--ink);
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  h2 .count {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--ink-3);
+    text-transform: none;
+  }
+  .section-note {
+    color: var(--ink-2);
+    font-size: 0.88rem;
+    margin: 0.7rem 0 1.2rem;
+    max-width: 44rem;
+  }
+
+  /* ---- feature rows ---- */
+  ul.rows { list-style: none; margin: 0; padding: 0; }
+  ul.rows li {
+    display: grid;
+    grid-template-columns: 3.1rem 1fr auto;
+    gap: 0.9rem;
+    align-items: start;
+    padding: 0.8rem 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  ul.rows li:last-child { border-bottom: none; }
+
+  .code {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--structure);
+    background: var(--surface-2);
+    border: 1px solid var(--rule);
+    padding: 0.15rem 0;
+    text-align: center;
+    letter-spacing: 0.03em;
+    margin-top: 0.15rem;
+  }
+  .name {
+    font-weight: 600;
+    display: block;
+    line-height: 1.35;
+  }
+  .desc {
+    color: var(--ink-2);
+    font-size: 0.875rem;
+    display: block;
+    margin-top: 0.15rem;
+  }
+
+  .chip {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0.22rem 0.5rem;
+    white-space: nowrap;
+    margin-top: 0.2rem;
+    border: 1px solid transparent;
+  }
+  .chip.done { color: var(--done); background: var(--done-bg); border-color: var(--done); }
+  .chip.pending { color: var(--pending); background: var(--pending-bg); border-color: var(--pending); }
+  .chip.blocked { color: var(--blocked); background: var(--blocked-bg); border-color: var(--blocked); }
+
+  /* ---- remaining / blocker cards ---- */
+  .cards { display: grid; gap: 1rem; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 4px solid var(--pending);
+    padding: 1.1rem 1.2rem;
+  }
+  .card.is-blocker { border-left-color: var(--blocked); }
+  .card h3 {
+    font-family: Oswald, sans-serif;
+    font-weight: 500;
+    font-size: 1.05rem;
+    margin: 0 0 0.4rem;
+    text-transform: uppercase;
+    letter-spacing: 0.01em;
+  }
+  .card p { margin: 0 0 0.5rem; color: var(--ink-2); font-size: 0.9rem; }
+  .card p:last-child { margin-bottom: 0; }
+  .card .why {
+    font-size: 0.82rem;
+    color: var(--ink-3);
+    border-top: 1px dashed var(--rule-strong);
+    padding-top: 0.5rem;
+    margin-top: 0.6rem;
+  }
+
+  /* ---- test table ---- */
+  .table-scroll { overflow-x: auto; border: 1px solid var(--rule); background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 30rem; font-size: 0.875rem; }
+  th, td { text-align: left; padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--rule); }
+  th {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-weight: 600;
+    background: var(--surface-2);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num {
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    font-weight: 600;
+    color: var(--done);
+  }
+  tfoot td {
+    font-weight: 600;
+    border-top: 2px solid var(--ink);
+    background: var(--surface-2);
+  }
+
+  /* ---- testing: commands and a click-through ---- */
+  .cmd {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.8rem;
+    background: var(--surface-2);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--structure);
+    padding: 0.55rem 0.8rem;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--ink);
+    margin: 0;
+  }
+  .cmd-block { display: grid; gap: 0.5rem; margin: 0 0 1rem; }
+  .cmd-label {
+    font-size: 0.85rem;
+    color: var(--ink-2);
+    margin: 0 0 0.15rem;
+  }
+  .warn {
+    background: var(--pending-bg);
+    border: 1px solid var(--pending);
+    color: var(--pending);
+    padding: 0.7rem 0.9rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin: 0 0 1.25rem;
+  }
+  ol.steps {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: step;
+    display: grid;
+    gap: 0.1rem;
+  }
+  ol.steps li {
+    counter-increment: step;
+    display: grid;
+    grid-template-columns: 2rem 1fr;
+    gap: 0.85rem;
+    align-items: start;
+    padding: 0.65rem 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  ol.steps li:last-child { border-bottom: none; }
+  ol.steps li::before {
+    content: counter(step);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--surface);
+    background: var(--structure);
+    width: 1.5rem;
+    height: 1.5rem;
+    display: grid;
+    place-items: center;
+    margin-top: 0.1rem;
+  }
+  ol.steps .expect {
+    display: block;
+    color: var(--ink-2);
+    font-size: 0.85rem;
+    margin-top: 0.15rem;
+  }
+  ol.steps .expect b { color: var(--done); font-weight: 600; }
+
+  .bugs { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
+  .bugs li {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    padding: 0.85rem 1rem;
+    font-size: 0.9rem;
+  }
+  .bugs strong { display: block; margin-bottom: 0.2rem; }
+  .bugs span { color: var(--ink-2); }
+
+  footer {
+    margin-top: 3.5rem;
+    padding-top: 1.25rem;
+    border-top: 3px solid var(--structure);
+    color: var(--ink-3);
+    font-size: 0.82rem;
+  }
+
+  @media (max-width: 34rem) {
+    ul.rows li { grid-template-columns: 2.9rem 1fr; }
+    ul.rows li .chip { grid-column: 2; justify-self: start; margin-top: 0.4rem; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">SMS Pro · Module 01 · Construction</p>
+    <h1>Kya ban gaya,<br>kya baaki hai</h1>
+    <p class="standfirst">
+      BRD ke saare 51 features ban chuke hain — customer, contractor aur admin,
+      teeno taraf. Neeche har feature ka ek line ka matlab hai, aur uske baad woh
+      cheezein jo abhi baaki hain.
+    </p>
+  </header>
+
+  <div class="summary">
+    <div class="stat is-done">
+      <span class="n">51</span>
+      <span class="l">Features banaye — 51 me se</span>
+    </div>
+    <div class="stat is-done">
+      <span class="n">350</span>
+      <span class="l">Automated test pass</span>
+    </div>
+    <div class="stat is-done">
+      <span class="n">8</span>
+      <span class="l">Phase complete (0–8)</span>
+    </div>
+    <div class="stat is-pending">
+      <span class="n">1</span>
+      <span class="l">Blocker — legal approval</span>
+    </div>
+  </div>
+
+  <!-- ================= CUSTOMER ================= -->
+  <section>
+    <h2>Customer ke liye <span class="count">C1–C23 · 23/23 done</span></h2>
+    <p class="section-note">
+      Customer ka pura safar: service dekhna, enquiry bhejna, quote compare karna,
+      paisa escrow me daalna, aur har stage approve karke handover tak jaana.
+    </p>
+    <ul class="rows">
+      <li><span class="code">C1</span><span><span class="name">Services list</span><span class="desc">Saari construction services, photo ke saath, search bhi.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C2</span><span><span class="name">Service detail</span><span class="desc">Kaam me kya-kya included hai, kya nahi, aur kitna time lagta hai.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C3</span><span><span class="name">Enquiry form</span><span class="desc">Kaam, jagah, budget aur kab chahiye — sab ek form me.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C4</span><span><span class="name">Photo aur drawing attach</span><span class="desc">Site ki photo ya naksha seedha upload ho jaata hai.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C5</span><span><span class="name">Enquiry tracking</span><span class="desc">Reference number milta hai, aur kahan tak pahuncha woh dikhta hai.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C6</span><span><span class="name">Matched contractor list</span><span class="desc">Jo contractor is kaam ke liye mile — rating, verified badge, aur kitne aise hi kaam kiye hain.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C7</span><span><span class="name">Contractor profile</span><span class="desc">Poora page: verified documents, purane kaam ki photos, aur customer reviews.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C8</span><span><span class="name">Search aur filter</span><span class="desc">City, rating, aur "abhi kaam le sakte hain ya nahi" se filter.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C9</span><span><span class="name">Site visit booking</span><span class="desc">Dono taraf se confirm hona zaroori — ek taraf se nahi chalega.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C10</span><span><span class="name">Quotation milna</span><span class="desc">Item-wise likha hua quote, aur kab tak valid hai woh bhi.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C11</span><span><span class="name">Quotes compare</span><span class="desc">Do-teen quotes side-by-side — sabse sasta highlight hota hai.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C12</span><span><span class="name">Sawaal aur change request</span><span class="desc">Quote pe sawaal pooch sakte hain ya badlav maang sakte hain.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C13</span><span><span class="name">Accept ya reject</span><span class="desc">Ek accept karte hi baaki quotes apne aap band ho jaate hain.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C14</span><span><span class="name">Project dashboard</span><span class="desc">Chalu aur khatam — sab projects ek jagah.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C15</span><span><span class="name">Stage list aur progress</span><span class="desc">Kaam kahan tak pahuncha, aur kitna paisa release hua.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C16</span><span><span class="name">Progress photo gallery</span><span class="desc">Contractor ki daali hui saari photos, date ke hisaab se.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C17</span><span><span class="name">Stage approve karna</span><span class="desc">Approve karte hi paisa release — yahi module ka dil hai.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C18</span><span><span class="name">Delay alert</span><span class="desc">Target date nikal gayi to dono ko apne aap notification.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C19</span><span><span class="name">Project documents</span><span class="desc">Agreement, drawing, bill — purane version bhi save rehte hain.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C20</span><span><span class="name">Contractor se chat</span><span class="desc">Project ke andar hi baat — permanent record, delete nahi ho sakta.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C21</span><span><span class="name">Payment schedule</span><span class="desc">Kitna hold hai, kitna diya, kitna baaki — ek bar me.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C22</span><span><span class="name">Project me paisa daalna</span><span class="desc">Paisa SMS Pro ke paas hold hota hai, contractor ko seedha nahi jaata.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">C23</span><span><span class="name">Handover aur rating</span><span class="desc">Kaam khatam, rating do — retention baad me apne aap release.</span></span><span class="chip done">Ban gaya</span></li>
+    </ul>
+  </section>
+
+  <!-- ================= CONTRACTOR ================= -->
+  <section>
+    <h2>Contractor ke liye <span class="count">W1–W18 · 18/18 done</span></h2>
+    <p class="section-note">
+      Contractor ka alag login aur alag screens hain — wahi app, lekin unka apna
+      hissa. Registration se lekar paisa milne tak.
+    </p>
+    <ul class="rows">
+      <li><span class="code">W1</span><span><span class="name">Registration</span><span class="desc">OTP se login, phir 7 step ka registration.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">W2</span><span><span class="name">Kaam declare karna</span><span class="desc">Kaunse trade, kaunse sheher, aur ek saath kitne project le sakte hain.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">W3</span><span><span class="name">Document upload</span><span class="desc">Licence, insurance, GST — expiry date ke saath track hote hain.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">W4</span><span><span class="name">Verification status</span><span class="desc">Approve hua ya nahi, aur nahi hua to kyun.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">W5</span><span><span class="name">Portfolio</span><span class="desc">Purane kaam ki photos, jo customer ko dikhti hain.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">W6</span><span><span class="name">Enquiry feed</span><span class="desc">Sirf unke trade aur area ke matching kaam.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">W7</span><span><span class="name">Accept ya decline</span><span class="desc">Accept karne se pehle customer ka naam nahi dikhta — sirf area.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">W8</span><span><span class="name">Visit scheduling</span><span class="desc">Visit ka time propose karo, customer confirm kare.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">W9</span><span><span class="name">Site visit form</span><span class="desc">Site pe jaakar naap aur observation record karna.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">W10</span><span><span class="name">Quotation builder</span><span class="desc">Line-by-line quote. Total server pe banta hai, app me nahi.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">W11</span><span><span class="name">Terms aur exclusions</span><span class="desc">Kya included nahi hai — likhe bina quote bhej hi nahi sakte.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">W12</span><span><span class="name">Payment stages propose</span><span class="desc">"70% advance" jaisa nahi chalega — limit lagi hui hai.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">W13</span><span><span class="name">Saved templates</span><span class="desc">Baar-baar wala quote save karke dobara use karo.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">W14</span><span><span class="name">Project workspace</span><span class="desc">Chalu projects, stages, aur customer ki details.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">W15</span><span><span class="name">Progress update</span><span class="desc">Kitna kaam hua — paisa maange bina bhi bata sakte hain.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">W16</span><span><span class="name">Stage submit karna</span><span class="desc">Photo ke bina submit nahi hoga — photo hi payment unlock karti hai.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">W17</span><span><span class="name">Earnings</span><span class="desc">Wallet me kitna, approval me kitna, aur hold me kitna.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">W18</span><span><span class="name">Trust score</span><span class="desc">5 cheezon se banta hai, aur kaunsi cheez sudharni hai woh bhi batata hai.</span></span><span class="chip done">Ban gaya</span></li>
+    </ul>
+  </section>
+
+  <!-- ================= ADMIN ================= -->
+  <section>
+    <h2>Aapki office team ke liye <span class="count">A1–A10 · 10/10 done</span></h2>
+    <p class="section-note">
+      Roz ka kaam chalane ke liye — kaun sa kaam atka hai, paisa kahan hai, aur
+      kisne kya kiya.
+    </p>
+    <ul class="rows">
+      <li><span class="code">A1</span><span><span class="name">Dashboard</span><span class="desc">Aaj kya dekhna hai — sirf wahi cheezein jinme kaam baaki hai.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">A2</span><span><span class="name">Contractor approval queue</span><span class="desc">Naye contractor, unke documents ke saath, approve ya reject.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">A3</span><span><span class="name">Contractor management</span><span class="desc">Poora record, aur zaroorat pade to suspend.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">A4</span><span><span class="name">Enquiry pipeline</span><span class="desc">Har enquiry kahan tak pahunchi — thandi padi hui highlight hoti hain.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">A5</span><span><span class="name">Project register</span><span class="desc">Saare projects, filter ke saath, aur kitna paisa hold me hai.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">A6</span><span><span class="name">Project me dakhal dena</span><span class="desc">Hold, cancel, ya contractor badalna — reason ke saath record hota hai.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">A7</span><span><span class="name">Payment control</span><span class="desc">Har rupaya jo hold me hai, aur har release jo hua.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">A8</span><span><span class="name">Service list manage</span><span class="desc">Services add ya edit — developer ki zaroorat nahi.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">A9</span><span><span class="name">Reports</span><span class="desc">City, service, mahina, contractor aur delay — CSV download bhi.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">A10</span><span><span class="name">Activity record</span><span class="desc">Har action ka permanent record. Aapki team bhi ise edit nahi kar sakti.</span></span><span class="chip done">Ban gaya</span></li>
+    </ul>
+  </section>
+
+  <!-- ================= EXTRA ================= -->
+  <section>
+    <h2>Extra, jo BRD ne suggest kiya tha <span class="count">2/2 done</span></h2>
+    <p class="section-note">
+      Ye BRD me "sawaal" the, feature nahi. Humne inka jawab dekar bana diya.
+    </p>
+    <ul class="rows">
+      <li><span class="code">Q15</span><span><span class="name">Dispute system</span><span class="desc">Dono me se koi bhi stage pe dispute utha sakta hai — us stage ka paisa freeze ho jaata hai, aapki team decide karti hai. Release, refund, aadha-aadha, ya khaarij.</span></span><span class="chip done">Ban gaya</span></li>
+      <li><span class="code">Q16</span><span><span class="name">Document types list</span><span class="desc">8 tarah ke documents settings me set hain — aap kabhi bhi badal sakte hain.</span></span><span class="chip done">Ban gaya</span></li>
+    </ul>
+  </section>
+
+  <!-- ================= TESTS ================= -->
+  <section>
+    <h2>Testing <span class="count">350 checks · sab pass</span></h2>
+    <p class="section-note">
+      Ye automated tests hain — har baar chala sakte hain. Jahan paisa involve hai,
+      wahan sabse zyada checks hain.
+    </p>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Kya check hota hai</th><th style="text-align:right">Checks</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Escrow — paisa hold, release, refund</td><td class="num">43</td></tr>
+          <tr><td>Contractor registration aur approval</td><td class="num">25</td></tr>
+          <tr><td>Enquiry se quote tak ka pura safar</td><td class="num">52</td></tr>
+          <tr><td>Project, stages aur staged payment</td><td class="num">55</td></tr>
+          <tr><td>Documents, chat, dispute aur trust score</td><td class="num">75</td></tr>
+          <tr><td>Admin dashboard, reports aur reassign</td><td class="num">49</td></tr>
+          <tr><td>Go-live acceptance — sab milakar</td><td class="num">51</td></tr>
+        </tbody>
+        <tfoot>
+          <tr><td>Total</td><td class="num">350</td></tr>
+        </tfoot>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================= BAAKI ================= -->
+  <section>
+    <h2>Ab kya baaki hai <span class="count">1 blocker · 4 optional</span></h2>
+    <p class="section-note">
+      Code ka kaam khatam hai. Jo baaki hai woh aapke decision ka intezaar kar
+      raha hai, ya jaan-boojhkar baad ke liye chhoda gaya hai.
+    </p>
+
+    <div class="cards">
+      <div class="card is-blocker">
+        <h3>Legal approval — paisa hold karne ki</h3>
+        <p>
+          <strong>Ye sabse zaroori hai.</strong> Module ab customer ka paisa escrow
+          me rakhta hai, aur dispute me use freeze karke dobara baant-ta hai.
+          India me customer ka paisa hold karne ke liye likhit legal confirmation
+          chahiye hoti hai.
+        </p>
+        <p class="why">
+          Code taiyaar hai aur test bhi ho chuka hai — bas ye confirmation aane
+          tak flag on karna aapka decision hai. (BRD ka blocking question 8.)
+        </p>
+      </div>
+
+      <div class="card">
+        <h3>Module flag abhi set nahi hai</h3>
+        <p>
+          Database me construction ka flag khaali hai. System khaali flag ko
+          "on" maanta hai — matlab abhi ye by default chalu hai, bina kisi ne
+          decide kiye.
+        </p>
+        <p class="why">
+          Ise soch-samajhkar on ya off karein. Runbook me exact command likhi hui hai.
+        </p>
+      </div>
+
+      <div class="card">
+        <h3>Contractor firm ke staff logins</h3>
+        <p>
+          Abhi ek contractor ka ek hi login hai. Badi firm ke supervisor ya
+          accountant ke alag login abhi nahi bane.
+        </p>
+        <p class="why">
+          Design already hai — project record me participant list bani hui hai,
+          isliye baad me banane par koi migration nahi lagega. (BRD question 9.)
+        </p>
+      </div>
+
+      <div class="card">
+        <h3>Materials aur labour management</h3>
+        <p>
+          Material kharidna, machinery rent, labour ka hisaab — ye BRD me
+          mention nahi tha, isliye nahi banaya.
+        </p>
+        <p class="why">
+          Agar chahiye to alag phase lagega. (BRD question 17.)
+        </p>
+      </div>
+
+      <div class="card">
+        <h3>Project khatam hone par AMC offer</h3>
+        <p>
+          Aapka AMC module already hai. Handover ke waqt customer ko AMC ka
+          offer dikhana ek achha idea hai, lekin abhi nahi bana.
+        </p>
+        <p class="why">
+          Humara suggestion — offer dikhaayein, apne aap enrol na karein. Bina
+          poochhe paid plan me daalna trust ka problem ban jaata hai.
+          (BRD question 18.)
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= TESTING ================= -->
+  <section>
+    <h2>Test kaise karein <span class="count">Automated + haath se</span></h2>
+    <p class="section-note">
+      Do tarah se. Pehla — ek command chalao, 350 checks apne aap chal jaate hain.
+      Doosra — 10 minute app me khud click karke dekho.
+    </p>
+
+    <h3 style="font-family:Oswald,sans-serif;font-weight:500;font-size:1.05rem;text-transform:uppercase;margin:0 0 0.6rem">
+      1 · Automated test
+    </h3>
+
+    <p class="warn">
+      Ye tests naya data banate hain aur phir delete kar dete hain. Sirf staging pe
+      chalayein — production pe bilkul nahi.
+    </p>
+
+    <div class="cmd-block">
+      <p class="cmd-label">Sab kuch ek saath (Backend folder me):</p>
+      <pre class="cmd">npm run test:construction-all</pre>
+    </div>
+
+    <div class="cmd-block">
+      <p class="cmd-label">Ya alag-alag, agar sirf ek hissa dekhna ho:</p>
+      <pre class="cmd">node scripts/verify-escrow-holds.js              # paisa hold/release  · 43
+node scripts/verify-contractor-onboarding.js    # contractor signup   · 25
+node scripts/verify-construction-pipeline.js    # enquiry se quote    · 52
+npm run test:construction-escrow                # project + payment   · 55
+npm run test:construction-transparency          # docs/chat/dispute   · 75
+npm run test:construction-admin                 # admin + reports     · 49
+npm run test:construction-acceptance            # go-live gate        · 51</pre>
+    </div>
+
+    <div class="cmd-block">
+      <p class="cmd-label">
+        Ye teen sirf padhte hain, kuch badalte nahi — production pe bhi safe hain:
+      </p>
+      <pre class="cmd">npm run verify:escrow
+npm run verify:construction-projects
+npm run verify:construction-transparency</pre>
+    </div>
+
+    <p class="section-note" style="margin-top:0.5rem">
+      Har command ke end me <code style="font-family:'IBM Plex Mono',monospace">PASSED: n
+      FAILED: 0</code> aana chahiye. Agar kahin <code style="font-family:'IBM Plex Mono',monospace">FAILED</code>
+      0 se zyada hai, to woh line padhein — usme saaf likha hota hai kya galat hua.
+    </p>
+
+    <h3 style="font-family:Oswald,sans-serif;font-weight:500;font-size:1.05rem;text-transform:uppercase;margin:2rem 0 0.6rem">
+      2 · Haath se — pura safar, 10 minute
+    </h3>
+    <p class="section-note" style="margin-top:0">
+      Isi order me karein. Har step me jo hona chahiye woh <b style="color:var(--done)">green</b> me likha hai.
+    </p>
+
+    <ol class="steps">
+      <li>
+        <span>
+          Customer bankar login karein
+          <span class="expect">Service strip me <b>Construction</b> ka tab dikhna chahiye.</span>
+        </span>
+      </li>
+      <li>
+        <span>
+          <code style="font-family:'IBM Plex Mono',monospace">/construction</code> kholein
+          <span class="expect">Photo ke saath catalogue, search box, aur neeche 4 tab — <b>Home · Enquiries · My Quotes · Projects</b>.</span>
+        </span>
+      </li>
+      <li>
+        <span>
+          "Browse verified contractors" pe click karein
+          <span class="expect">Verified contractor ki list. Kisi ek pe click karo — <b>uska poora profile, purane kaam ki photo aur reviews</b> khulne chahiye.</span>
+        </span>
+      </li>
+      <li>
+        <span>
+          Koi service chunkar enquiry bhejein
+          <span class="expect">Reference number milega, aur <b>Enquiries</b> tab me woh dikhne lagegi.</span>
+        </span>
+      </li>
+      <li>
+        <span>
+          Alag browser me <code style="font-family:'IBM Plex Mono',monospace">/contractor/login</code> pe contractor bankar login karein
+          <span class="expect">Alag login, alag screens. Enquiry unke <b>feed me dikhegi — lekin customer ka naam nahi</b>, sirf area.</span>
+        </span>
+      </li>
+      <li>
+        <span>
+          Lead accept karke quote banayein aur bhejein
+          <span class="expect">Exclusions likhe bina bhej hi nahi payenge. Bhejte hi customer ke <b>My Quotes</b> me aa jayega.</span>
+        </span>
+      </li>
+      <li>
+        <span>
+          Customer bankar quote accept karein
+          <span class="expect">Project ban jayega, status <b>"Waiting for payment"</b>.</span>
+        </span>
+      </li>
+      <li>
+        <span>
+          Project me paisa daalein (Fund)
+          <span class="expect">Wallet ka <b>balance same rahega</b>, sirf locked amount badhega — paisa hold hua hai, gaya nahi.</span>
+        </span>
+      </li>
+      <li>
+        <span>
+          Doosre module (Food ya Taxi) me pura balance kharch karne ki koshish karein
+          <span class="expect"><b>Refuse ho jana chahiye.</b> Jo paisa hold me hai woh kahin aur nahi lag sakta.</span>
+        </span>
+      </li>
+      <li>
+        <span>
+          Contractor bankar stage submit karein — bina photo ke
+          <span class="expect"><b>Refuse hoga.</b> Photo daalkar dobara karein, tab jayega.</span>
+        </span>
+      </li>
+      <li>
+        <span>
+          Customer bankar stage approve karein
+          <span class="expect">Contractor ke wallet me <b>turant paisa aa jayega</b> (retention kaatkar). Dobara approve dabayein — <b>doosri baar paisa nahi jayega</b>.</span>
+        </span>
+      </li>
+      <li>
+        <span>
+          Project ke <b>Documents</b> tab me kuch upload karein, phir usi ka naya version daalein
+          <span class="expect">Purana version <b>"Superseded"</b> mark hoga, delete nahi hoga.</span>
+        </span>
+      </li>
+      <li>
+        <span>
+          <b>Messages</b> tab me message bhejein
+          <span class="expect">Contractor ki taraf dikhega. Stage approve wala <b>system note bhi usi chat me</b> dikhega.</span>
+        </span>
+      </li>
+      <li>
+        <span>
+          Kisi stage pe dispute utha kar dekhein
+          <span class="expect">Us stage ka <b>paisa freeze</b> ho jayega — na customer approve kar payega, na admin.</span>
+        </span>
+      </li>
+      <li>
+        <span>
+          Admin me <code style="font-family:'IBM Plex Mono',monospace">/admin/construction/dashboard</code> kholein
+          <span class="expect">Wahi dispute <b>"Needs attention"</b> me sabse upar dikhega, aur frozen amount ke saath.</span>
+        </span>
+      </li>
+      <li>
+        <span>
+          Admin se dispute resolve karein
+          <span class="expect">Jo bhi chunein — release, refund, ya aadha-aadha — <b>hisaab poora milna chahiye</b>, ek paisa idhar-udhar nahi.</span>
+        </span>
+      </li>
+      <li>
+        <span>
+          Admin me <b>Payment Control</b> aur <b>Activity Record</b> kholein
+          <span class="expect">Poora paisa jo hold me hai woh dikhega, aur upar ka <b>har action activity record me</b> mil jayega.</span>
+        </span>
+      </li>
+      <li>
+        <span>
+          Aakhir me: admin se construction module <b>off</b> karke dekhein
+          <span class="expect">Nayi enquiry <b>ruk jayegi</b>, lekin chalu project ka approve aur payment <b>chalta rahega</b>. Yahi sabse zaroori check hai.</span>
+        </span>
+      </li>
+    </ol>
+
+    <p class="section-note" style="margin-top:1.25rem">
+      Agar step 9, 11, 14 ya 18 me jo likha hai woh na ho — turant batayein. Ye
+      chaar seedhe paise se jude hain, baaki sab uske baad aata hai.
+    </p>
+  </section>
+
+  <!-- ================= BUGS FIXED ================= -->
+  <section>
+    <h2>Kuch purane bugs jo raaste me mile <span class="count">Doosre modules ke bhi</span></h2>
+    <p class="section-note">
+      Ye construction banate waqt mile, lekin inme se kuch already live modules
+      me the — matlab ye pehle se chal rahe the aur kisi ko pata nahi tha.
+    </p>
+    <ul class="bugs">
+      <li>
+        <strong>15 unique index kabhi bane hi nahi the</strong>
+        <span>
+          Bike-rent, service-provider, quick-commerce aur food — chaaron me.
+          MongoDB `$ne` ko partial index me accept nahi karta, isliye poora index
+          chupchaap reject ho jaata tha. Iska matlab: duplicate hub code,
+          ek hi bike do baar register, ek payout do baar record, aur ek
+          restaurant ka <em>do baar billing</em> — sab possible tha. Sab theek,
+          6 index build ho gaye.
+        </span>
+      </li>
+      <li>
+        <strong>Contractor aur service provider ko push notification jaati hi nahi thi</strong>
+        <span>
+          Firebase ki owner list me dono ka naam hi nahi tha, aur error chupchaap
+          nigal liya jaata tha. Ab dono register hain aur test bhi ho chuka.
+        </span>
+      </li>
+      <li>
+        <strong>Module off karne par project ka paisa phas jaata tha</strong>
+        <span>
+          Sabse bada. Construction band karte hi na contractor kaam submit kar
+          sakta tha, na customer approve — sirf cancel karke customer ko refund
+          ho sakta tha. Matlab jis contractor ne kaam kar liya, use paisa milne
+          ka koi raasta nahi bachta tha. Ab naya kaam rukta hai, purana project
+          normally khatam hota hai.
+        </span>
+      </li>
+      <li>
+        <strong>JWT expiry setting galat thi</strong>
+        <span>
+          Local `.env` me `7dj` likha tha — is galti se <em>poore platform</em> ka
+          har login fail ho raha tha, sirf construction ka nahi.
+        </span>
+      </li>
+      <li>
+        <strong>Admin panel se do module chupchaap hat jaate the</strong>
+        <span>
+          Koi bhi admin apni profile save karta to porter aur service-provider
+          uski allowed list se nikal jaate the.
+        </span>
+      </li>
+    </ul>
+  </section>
+
+  <footer>
+    <p>
+      Poori technical detail <strong>docs/construction-module-blueprint.md</strong> me hai.
+      Live karne ka step-by-step process <strong>docs/construction-go-live-runbook.md</strong> me.
+    </p>
+    <p>
+      Status: Phase 0 se 8 tak complete · 350 automated checks pass · frontend build clean.
+    </p>
+  </footer>
+
+</div>

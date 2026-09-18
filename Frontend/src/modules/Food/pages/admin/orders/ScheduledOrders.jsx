@@ -1,0 +1,97 @@
+import { useState, useCallback } from "react"
+import { emptyOrders } from "@food/utils/adminFallbackData"
+import OrdersTopbar from "@food/components/admin/orders/OrdersTopbar"
+import OrdersTable from "@food/components/admin/orders/OrdersTable"
+import FilterPanel from "@food/components/admin/orders/FilterPanel"
+import ViewOrderDialog from "@food/components/admin/orders/ViewOrderDialog"
+import SettingsDialog from "@food/components/admin/orders/SettingsDialog"
+import { useOrdersManagement } from "@food/components/admin/orders/useOrdersManagement"
+
+const getScheduledOrders = () =>
+  emptyOrders.filter(
+    (order) => order.orderStatus === "Scheduled" || order.orderStatus === "Pending"
+  )
+
+export default function ScheduledOrders() {
+  const [scheduledOrders, setScheduledOrders] = useState(getScheduledOrders)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const refreshOrders = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      setScheduledOrders(getScheduledOrders())
+    } finally {
+      setRefreshing(false)
+    }
+  }, [])
+
+  const {
+    searchQuery,
+    setSearchQuery,
+    isFilterOpen,
+    setIsFilterOpen,
+    isSettingsOpen,
+    setIsSettingsOpen,
+    isViewOrderOpen,
+    setIsViewOrderOpen,
+    selectedOrder,
+    filters,
+    setFilters,
+    visibleColumns,
+    filteredOrders,
+    count,
+    activeFiltersCount,
+    restaurants,
+    handleApplyFilters,
+    handleResetFilters,
+    handleExport,
+    handleViewOrder,
+    handlePrintOrder,
+    toggleColumn,
+    resetColumns,
+  } = useOrdersManagement(scheduledOrders, "scheduled", "Scheduled Orders")
+
+  return (
+    <div className="p-4 lg:p-6 bg-slate-50 min-h-screen w-full max-w-full overflow-x-hidden">
+      <OrdersTopbar 
+        title="Scheduled Orders" 
+        count={count} 
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        onFilterClick={() => setIsFilterOpen(true)}
+        activeFiltersCount={activeFiltersCount}
+        onExport={handleExport}
+        onSettingsClick={() => setIsSettingsOpen(true)}
+        onRefresh={refreshOrders}
+        refreshing={refreshing}
+      />
+      <FilterPanel
+        isOpen={isFilterOpen}
+        onClose={() => setIsFilterOpen(false)}
+        filters={filters}
+        setFilters={setFilters}
+        onApply={handleApplyFilters}
+        onReset={handleResetFilters}
+        restaurants={restaurants}
+      />
+      <SettingsDialog
+        isOpen={isSettingsOpen}
+        onOpenChange={setIsSettingsOpen}
+        visibleColumns={visibleColumns}
+        toggleColumn={toggleColumn}
+        resetColumns={resetColumns}
+      />
+      <ViewOrderDialog
+        isOpen={isViewOrderOpen}
+        onOpenChange={setIsViewOrderOpen}
+        order={selectedOrder}
+      />
+      <OrdersTable 
+        orders={filteredOrders} 
+        visibleColumns={visibleColumns}
+        onViewOrder={handleViewOrder}
+        onPrintOrder={handlePrintOrder}
+      />
+    </div>
+  )
+}

@@ -1,0 +1,13 @@
+node_modules/
+
+# Environment files: ignore every variant, then re-allow the committed template.
+# `.env` alone was not enough — .env.production / .env.prod / .env.local all carry
+# real credentials and were being tracked by default.
+.env
+.env.*
+!.env.example
+
+*.log
+dist/
+coverage/
+.DS_Store

@@ -1,0 +1,198 @@
+{
+  "info": {
+    "name": "Bike Rent - Auth & FCM (User + Vendor)",
+    "description": "OTP login and FCM token registration for the Bike Rent User app and Vendor app.\n\nHow to use:\n1. Import this collection AND the accompanying environment file (BikeRent-Auth-FCM.postman_environment.json).\n2. Select the imported environment (top-right dropdown in Postman) before sending any request.\n3. Run requests top-to-bottom inside each folder — each request's test script auto-saves the OTP / accessToken into environment variables used by the next request.\n\nIMPORTANT for the Flutter app:\n- The FCM token itself is generated on-device by the firebase_messaging Flutter package (FirebaseMessaging.instance.getToken()). Postman cannot generate a real one. Use a placeholder value in {{fcm_token_mobile}} to test the API shape, then swap in the real token string from the device in the actual app.\n- Backend only accepts platform values \"web\" or \"mobile\". Flutter apps must always send platform: \"mobile\".",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:5000/api", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. User App (Customer)",
+      "description": "Bike Rent customers use the platform-wide User auth (shared with the Food app) — there is no bike-rent-specific user login. FCM token can be sent inline at verify-otp, or saved/updated later via the dedicated /fcm-tokens endpoints (recommended, since verify-otp only happens once per session but the FCM token can rotate at any time).",
+      "item": [
+        {
+          "name": "1.1 Request OTP (User)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{user_phone}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/food/auth/user/request-otp",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "food", "auth", "user", "request-otp"]
+            },
+            "description": "phone: 8–15 digit mobile number OR an email address.\n\nIn non-production (or when USE_DEFAULT_OTP=true on the backend), the response body echoes the OTP directly under data.otp so you don't need real SMS to test."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body?.data?.otp) {",
+                  "  pm.environment.set('user_otp', String(body.data.otp));",
+                  "  console.log('Saved user_otp =', body.data.otp);",
+                  "}",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 Verify OTP (User) + optional FCM token",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{user_phone}}\",\n  \"otp\": \"{{user_otp}}\",\n  \"fcmToken\": \"{{fcm_token_mobile}}\",\n  \"platform\": \"mobile\",\n  \"name\": \"Test User\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/food/auth/user/verify-otp",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "food", "auth", "user", "verify-otp"]
+            },
+            "description": "otp: exactly 4 digits, from step 1.1's response (or real SMS in production).\nfcmToken / platform / name are ALL OPTIONAL — omit fcmToken+platform entirely if you just want to log in without registering a device token here (use the dedicated save-token request in 1.3 instead, which is the better pattern for a mobile app since the token can be (re)sent any time after login, not just once at login).\nplatform must be \"web\" or \"mobile\" — Flutter must send \"mobile\".\n\nResponse: { accessToken, refreshToken, user, isNewUser }"
+            }
+          ,
+            "event": [
+              {
+                "listen": "test",
+                "script": {
+                  "type": "text/javascript",
+                  "exec": [
+                    "const body = pm.response.json();",
+                    "if (body?.data?.accessToken) {",
+                    "  pm.environment.set('user_access_token', body.data.accessToken);",
+                    "  pm.environment.set('user_refresh_token', body.data.refreshToken);",
+                    "  console.log('Saved user_access_token');",
+                    "}",
+                    "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                  ]
+                }
+              }
+            ]
+        },
+        {
+          "name": "1.3 Save / Update FCM Token (User, mobile) — RECOMMENDED for Flutter",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{user_access_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{fcm_token_mobile}}\",\n  \"platform\": \"mobile\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/fcm-tokens/mobile/save",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "fcm-tokens", "mobile", "save"]
+            },
+            "description": "Requires login first (Bearer accessToken from 1.2).\nCall this any time the app obtains/refreshes an FCM token from FirebaseMessaging.instance.getToken() or onTokenRefresh — not just at login.\nStores into FoodUser.fcmTokenMobile (array, de-duplicated, upserted).\n\nResponse: { success, message: 'Mobile FCM token saved successfully', data: { ownerType: 'USER', ownerId, platform: 'mobile' } }"
+          }
+        },
+        {
+          "name": "1.4 Remove FCM Token (User) — call on logout",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{user_access_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{fcm_token_mobile}}\",\n  \"platform\": \"mobile\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/fcm-tokens/remove/{{fcm_token_mobile}}",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "fcm-tokens", "remove", "{{fcm_token_mobile}}"]
+            },
+            "description": "Call on logout so this device stops receiving push notifications for the logged-out account. Token also accepted in the URL param or the body — either works."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Vendor App (Bike Rent)",
+      "description": "Bike-rent-specific vendor auth. IMPORTANT: unlike the User app, there is NO standalone 'save FCM token' endpoint for vendors. The FCM token can ONLY be registered by passing it inline in the verify-otp call below (2.2). If the Flutter vendor app's FCM token rotates after login, there is currently no API to update it — flag this to your backend team if you need it, or re-run verify-otp (which will re-log the vendor in) to push a fresh token.",
+      "item": [
+        {
+          "name": "2.1 Request OTP (Vendor)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{vendor_phone}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/bike-rent/vendor/auth/request-otp",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "bike-rent", "vendor", "auth", "request-otp"]
+            },
+            "description": "phone: 10-digit mobile number.\n\nIn non-production (or USE_DEFAULT_OTP=true), response echoes data.otp for testing without real SMS."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body?.data?.otp) {",
+                  "  pm.environment.set('vendor_otp', String(body.data.otp));",
+                  "  console.log('Saved vendor_otp =', body.data.otp);",
+                  "}",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 Verify OTP (Vendor) + FCM token",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{vendor_phone}}\",\n  \"otp\": \"{{vendor_otp}}\",\n  \"fcmToken\": \"{{fcm_token_mobile}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/bike-rent/vendor/auth/verify-otp",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "bike-rent", "vendor", "auth", "verify-otp"]
+            },
+            "description": "otp: from step 2.1's response.\nfcmToken is OPTIONAL but this is the ONLY way to register it for a vendor — there's no separate save-token route (see folder description). No 'platform' field exists here; whatever string you send is stored as-is in BikeVendor.fcmTokens.\n\nResponse (existing vendor): { accessToken, refreshToken, vendor }\nResponse (brand-new phone number): { needsRegistration: true, phone, resumeStep, accessToken, refreshToken } — the vendor still needs to complete onboarding before they're a full vendor."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body?.data?.accessToken) {",
+                  "  pm.environment.set('vendor_access_token', body.data.accessToken);",
+                  "  pm.environment.set('vendor_refresh_token', body.data.refreshToken);",
+                  "  console.log('Saved vendor_access_token');",
+                  "}",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

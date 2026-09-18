@@ -1,0 +1,55 @@
+<!--
+  AndroidManifest.xml additions for Phase 2 (Flutter shell).
+  Merge these into android/app/src/main/AndroidManifest.xml.
+  Replace com.smspro.* with your applicationId + package path.
+-->
+
+<!-- ── Permissions (inside <manifest>, before <application>) ────────────────── -->
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+<uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+<uses-permission android:name="android.permission.WAKE_LOCK" />
+<uses-permission android:name="android.permission.VIBRATE" />
+<uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+<!-- ── Inside <application> … </application> ────────────────────────────────── -->
+
+<!-- Full-screen incoming-order path handled natively even when the app is killed. -->
+<service
+    android:name=".order.OrderFcmService"
+    android:exported="false">
+    <intent-filter>
+        <action android:name="com.google.firebase.MESSAGING_EVENT" />
+    </intent-filter>
+</service>
+
+<!-- Foreground alarm-ring service (mediaPlayback type required on Android 10+). -->
+<service
+    android:name=".order.RingForegroundService"
+    android:exported="false"
+    android:foregroundServiceType="mediaPlayback" />
+
+<!-- Accept / Reject notification actions. -->
+<receiver
+    android:name=".order.OrderActionReceiver"
+    android:exported="false" />
+
+<!-- Deep-link scheme used by the notification tap / Accept (smspro://order/{id}).
+     Add this intent-filter to your existing MainActivity <activity> block. -->
+<!--
+<activity android:name=".MainActivity" android:showWhenLocked="true" android:turnScreenOn="true" ...>
+    <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="smspro" android:host="order" />
+    </intent-filter>
+</activity>
+-->
+
+<!-- Default FCM notification channel for the Firebase SDK's own fallbacks. -->
+<meta-data
+    android:name="com.google.firebase.messaging.default_notification_channel_id"
+    android:value="orders_high_priority" />

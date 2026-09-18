@@ -1,0 +1,643 @@
+<title>Running SMS Pro Construction</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;600;700;900&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+
+<style>
+  :root {
+    --paper: #FBFBFD;
+    --card: #FFFFFF;
+    --sunk: #F3F4F8;
+    --ink: #14161F;
+    --ink-2: #4E5464;
+    --ink-3: #878DA0;
+    --rule: #E2E4EC;
+    --rule-2: #CDD1DE;
+
+    --accent: #2B4ACB;      /* blueprint blue — commands, rails, links */
+    --accent-soft: #E8ECFB;
+    --good: #17694A;
+    --good-soft: #E2F1EA;
+    --warn: #8A5A05;
+    --warn-soft: #FBF0DC;
+    --stop: #98241D;
+    --stop-soft: #FAE7E5;
+
+    --term-bg: #171A24;
+    --term-ink: #E4E7F2;
+    --term-dim: #7C8398;
+    --term-accent: #7FA5FF;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0F1116;
+      --card: #171A21;
+      --sunk: #1D2129;
+      --ink: #E8EAF2;
+      --ink-2: #A6ABBC;
+      --ink-3: #757B8D;
+      --rule: #272C36;
+      --rule-2: #363C49;
+
+      --accent: #8AA6FF;
+      --accent-soft: #1B2340;
+      --good: #62C79C;
+      --good-soft: #12271E;
+      --warn: #E0A94B;
+      --warn-soft: #2C2110;
+      --stop: #EE8A80;
+      --stop-soft: #2E1917;
+
+      --term-bg: #0A0C11;
+      --term-ink: #E4E7F2;
+      --term-dim: #6B7285;
+      --term-accent: #8AA6FF;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper: #0F1116;
+    --card: #171A21;
+    --sunk: #1D2129;
+    --ink: #E8EAF2;
+    --ink-2: #A6ABBC;
+    --ink-3: #757B8D;
+    --rule: #272C36;
+    --rule-2: #363C49;
+    --accent: #8AA6FF;
+    --accent-soft: #1B2340;
+    --good: #62C79C;
+    --good-soft: #12271E;
+    --warn: #E0A94B;
+    --warn-soft: #2C2110;
+    --stop: #EE8A80;
+    --stop-soft: #2E1917;
+    --term-bg: #0A0C11;
+    --term-ink: #E4E7F2;
+    --term-dim: #6B7285;
+    --term-accent: #8AA6FF;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 58rem; margin: 0 auto; padding: 2.5rem 1.25rem 6rem; }
+
+  /* ---- masthead ---- */
+  header.top { margin-bottom: 2.25rem; }
+  .kicker {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 0.6rem;
+  }
+  h1 {
+    font-family: Chivo, sans-serif;
+    font-weight: 900;
+    font-size: clamp(1.9rem, 5.5vw, 2.9rem);
+    line-height: 1.06;
+    letter-spacing: -0.025em;
+    text-wrap: balance;
+    margin: 0 0 0.65rem;
+  }
+  .lede { max-width: 40rem; color: var(--ink-2); margin: 0; font-size: 1.05rem; }
+
+  /* ---- callouts ---- */
+  .note {
+    border: 1px solid var(--rule-2);
+    border-left: 3px solid var(--accent);
+    background: var(--card);
+    padding: 0.9rem 1.1rem;
+    margin: 1.25rem 0;
+    font-size: 0.92rem;
+  }
+  .note.stop { border-left-color: var(--stop); background: var(--stop-soft); color: var(--stop); }
+  .note.warn { border-left-color: var(--warn); background: var(--warn-soft); color: var(--warn); }
+  .note strong { font-weight: 600; }
+  .note p { margin: 0 0 0.45rem; }
+  .note p:last-child { margin: 0; }
+
+  /* ---- steps: the rail carries the sequence ---- */
+  section.stage { margin: 2.75rem 0 0; }
+  h2 {
+    font-family: Chivo, sans-serif;
+    font-weight: 700;
+    font-size: 1.5rem;
+    letter-spacing: -0.015em;
+    margin: 0 0 0.3rem;
+  }
+  .stage-note { color: var(--ink-2); margin: 0 0 1.4rem; max-width: 42rem; font-size: 0.95rem; }
+
+  ol.steps { list-style: none; margin: 0; padding: 0; counter-reset: s; }
+  ol.steps > li {
+    counter-increment: s;
+    position: relative;
+    padding: 0 0 1.9rem 3.1rem;
+    border-left: 2px solid var(--rule);
+    margin-left: 0.95rem;
+  }
+  ol.steps > li:last-child { border-left-color: transparent; padding-bottom: 0.5rem; }
+  ol.steps > li::before {
+    content: counter(s);
+    position: absolute;
+    left: -0.95rem;
+    top: -0.15rem;
+    width: 1.85rem;
+    height: 1.85rem;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.78rem;
+    font-weight: 600;
+    display: grid;
+    place-items: center;
+  }
+  ol.steps h3 {
+    font-family: Chivo, sans-serif;
+    font-weight: 600;
+    font-size: 1.06rem;
+    margin: 0 0 0.35rem;
+    letter-spacing: -0.008em;
+  }
+  ol.steps p { margin: 0 0 0.7rem; color: var(--ink-2); font-size: 0.94rem; }
+
+  /* ---- terminal ---- */
+  pre.sh {
+    background: var(--term-bg);
+    color: var(--term-ink);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.83rem;
+    line-height: 1.75;
+    padding: 0.85rem 1rem;
+    margin: 0 0 0.75rem;
+    overflow-x: auto;
+    border-radius: 4px;
+  }
+  pre.sh .c { color: var(--term-dim); }
+  pre.sh .p { color: var(--term-accent); }
+
+  code.inline {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.86em;
+    background: var(--sunk);
+    border: 1px solid var(--rule);
+    padding: 0.08em 0.36em;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+
+  .expect {
+    display: flex;
+    gap: 0.55rem;
+    align-items: baseline;
+    background: var(--good-soft);
+    color: var(--good);
+    padding: 0.55rem 0.8rem;
+    font-size: 0.86rem;
+    border-radius: 4px;
+    margin-bottom: 0.6rem;
+  }
+  .expect b { font-family: "JetBrains Mono", monospace; font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; flex-shrink: 0; }
+
+  /* ---- tables ---- */
+  .scroll { overflow-x: auto; border: 1px solid var(--rule); background: var(--card); border-radius: 4px; margin-bottom: 0.9rem; }
+  table { border-collapse: collapse; width: 100%; min-width: 30rem; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 0.55rem 0.85rem; border-bottom: 1px solid var(--rule); }
+  th {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.66rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    background: var(--sunk);
+    font-weight: 600;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td code { font-family: "JetBrains Mono", monospace; font-size: 0.82rem; }
+
+  /* ---- two-terminal split ---- */
+  .split { display: grid; gap: 0.9rem; }
+  @media (min-width: 46rem) { .split { grid-template-columns: 1fr 1fr; } }
+  .term-card { border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; background: var(--card); }
+  .term-card .head {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding: 0.45rem 0.85rem;
+    background: var(--sunk);
+    border-bottom: 1px solid var(--rule);
+  }
+  .term-card pre.sh { margin: 0; border-radius: 0; }
+
+  /* ---- flow ---- */
+  ol.flow { list-style: none; margin: 0; padding: 0; counter-reset: f; }
+  ol.flow li {
+    counter-increment: f;
+    display: grid;
+    grid-template-columns: 1.6rem 1fr;
+    gap: 0.75rem;
+    padding: 0.55rem 0;
+    border-bottom: 1px solid var(--rule);
+    align-items: start;
+  }
+  ol.flow li:last-child { border-bottom: none; }
+  ol.flow li::before {
+    content: counter(f);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.7rem;
+    color: var(--accent);
+    background: var(--accent-soft);
+    width: 1.6rem;
+    height: 1.6rem;
+    display: grid;
+    place-items: center;
+    border-radius: 3px;
+    font-weight: 600;
+  }
+  ol.flow .who {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.64rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    display: block;
+  }
+  ol.flow .what { font-weight: 600; font-size: 0.94rem; display: block; }
+  ol.flow .see { color: var(--ink-2); font-size: 0.87rem; display: block; }
+
+  dl.trouble { margin: 0; }
+  dl.trouble dt {
+    font-family: Chivo, sans-serif;
+    font-weight: 600;
+    font-size: 0.96rem;
+    margin-top: 1.15rem;
+    color: var(--ink);
+  }
+  dl.trouble dd { margin: 0.25rem 0 0; color: var(--ink-2); font-size: 0.92rem; }
+
+  footer { margin-top: 3.5rem; padding-top: 1.25rem; border-top: 1px solid var(--rule); color: var(--ink-3); font-size: 0.85rem; }
+  a { color: var(--accent); }
+</style>
+
+<div class="wrap">
+
+<header class="top">
+  <p class="kicker">SMS Pro · Construction module</p>
+  <h1>Getting it running</h1>
+  <p class="lede">
+    From a fresh clone to clicking through a live project with money held in escrow.
+    Roughly fifteen minutes, most of it waiting for <code class="inline">npm install</code>.
+  </p>
+</header>
+
+<div class="note stop">
+  <p><strong>Check which database you are pointed at before you start.</strong></p>
+  <p>
+    Several commands below write data. The seed and test scripts are for a local
+    or staging database — never production.
+  </p>
+</div>
+
+<!-- ============================ SETUP ============================ -->
+<section class="stage">
+  <h2>Set it up</h2>
+  <p class="stage-note">Once per machine. Skip to the next part if you have done this already.</p>
+
+  <ol class="steps">
+    <li>
+      <h3>Install dependencies</h3>
+      <p>Two separate installs — the backend and the frontend are independent packages.</p>
+      <pre class="sh"><span class="c"># from the repo root</span>
+<span class="p">cd</span> Backend  &amp;&amp; npm install
+<span class="p">cd</span> ../Frontend &amp;&amp; npm install</pre>
+      <p>Node 20 or newer. The project is developed on Node 24.</p>
+    </li>
+
+    <li>
+      <h3>Point the backend at your database</h3>
+      <p>
+        <code class="inline">Backend/.env</code> holds everything the server needs.
+        These are the ones that matter for construction:
+      </p>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Key</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>MONGODB_URI</code></td><td>Required. Atlas or a local replica set — transactions need one</td></tr>
+            <tr><td><code>PORT</code></td><td>Backend port. Currently <code>5001</code></td></tr>
+            <tr><td><code>USE_DEFAULT_OTP</code></td><td><code>true</code> makes every OTP <code>1234</code>. Essential for testing</td></tr>
+            <tr><td><code>JWT_ACCESS_EXPIRES</code></td><td>Must be a valid timespan like <code>7d</code>. A typo here breaks every login on the platform</td></tr>
+            <tr><td><code>CLOUDINARY_*</code></td><td>File and photo uploads</td></tr>
+            <tr><td><code>PEXELS_API_KEY</code></td><td>Only for fetching catalogue photos</td></tr>
+            <tr><td><code>REDIS_URL</code></td><td>Optional. Without it the server skips background queues and still runs</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        MongoDB must be a <strong>replica set</strong>. Every escrow movement runs
+        inside a transaction, and a standalone server cannot do transactions.
+        Atlas gives you this by default.
+      </p>
+    </li>
+
+    <li>
+      <h3>Point the frontend at the backend</h3>
+      <p>
+        In <code class="inline">Frontend/.env</code>, set the API base URL to a
+        relative path so the dev proxy handles it:
+      </p>
+      <pre class="sh">VITE_API_BASE_URL=/api/v1</pre>
+      <div class="note warn">
+        <p><strong>Worth checking before you start.</strong></p>
+        <p>
+          The backend runs on <code class="inline">5001</code> and the Vite dev proxy
+          forwards <code class="inline">/api/v1</code> there. But if
+          <code class="inline">VITE_API_BASE_URL</code> is set to an absolute
+          <code class="inline">http://localhost:5000/...</code> it bypasses the proxy
+          entirely and calls a port with nothing on it. Every request then fails with
+          no useful error.
+        </p>
+        <p>
+          Relative is also the right value in production, where the API is served
+          from the same origin.
+        </p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<!-- ============================ DATABASE ============================ -->
+<section class="stage">
+  <h2>Prepare the database</h2>
+  <p class="stage-note">
+    Each command is safe to run twice. Run them in this order — later phases
+    depend on indexes created by earlier ones.
+  </p>
+
+  <ol class="steps">
+    <li>
+      <h3>Build the indexes</h3>
+      <p>
+        The connection sets <code class="inline">autoIndex: false</code>, so nothing
+        is created automatically. Some of these are correctness guarantees, not
+        speed — the unique index on the escrow ledger is what makes a retried
+        payment pay once instead of twice.
+      </p>
+      <pre class="sh"><span class="p">cd</span> Backend
+npm run migrate:escrow-indexes
+npm run migrate:construction-catalogue
+npm run migrate:construction-contractors
+npm run migrate:construction-pipeline
+npm run migrate:construction-projects
+npm run migrate:construction-transparency</pre>
+      <div class="expect"><b>expect</b><span>Each ends with a line confirming the unique indexes it needed were created.</span></div>
+    </li>
+
+    <li>
+      <h3>Repair the older indexes</h3>
+      <p>
+        Fifteen unique indexes across bike-rent, service-provider, quick-commerce
+        and food were never actually built — MongoDB rejects
+        <code class="inline">$ne</code> inside a partial index and silently
+        discards the whole specification. Check first, then build.
+      </p>
+      <pre class="sh">npm run check:partial-indexes   <span class="c"># read-only</span>
+npm run repair:partial-indexes  <span class="c"># builds them</span></pre>
+      <p>
+        If the repair reports duplicates, fix those rows by hand first. It refuses
+        rather than choosing which duplicate survives — that is not a decision a
+        script should make.
+      </p>
+    </li>
+
+    <li>
+      <h3>Fill the catalogue</h3>
+      <p>Categories and services, then photographs for them.</p>
+      <pre class="sh">npm run db:seed-construction
+
+<span class="c"># photos — needs PEXELS_API_KEY</span>
+node scripts/fetch-catalogue-images.js --dry-run --provider=pexels
+node scripts/fetch-catalogue-images.js --provider=pexels</pre>
+      <p>
+        Images are downloaded and re-uploaded to your own Cloudinary, so the app
+        never depends on someone else's server staying up.
+      </p>
+    </li>
+
+    <li>
+      <h3>Seed a working demo</h3>
+      <p>
+        This is the one that makes every screen worth looking at: a customer, three
+        contractors, a live project mid-build and a finished one.
+      </p>
+      <pre class="sh">npm run demo:construction</pre>
+      <div class="expect"><b>expect</b><span>A summary with login numbers, the current money position, and a list of URLs to visit.</span></div>
+      <p>
+        Re-running is safe — it clears only what it created. To remove it:
+        <code class="inline">npm run demo:construction-clean</code>
+      </p>
+    </li>
+
+    <li>
+      <h3>Turn the module on</h3>
+      <p>
+        The flag lives on the shared settings document. An absent value counts as
+        enabled, so set it deliberately rather than relying on that:
+      </p>
+      <pre class="sh">db.globalsettings.updateOne({}, { $set: { <span class="p">"modules.construction"</span>: true } })</pre>
+      <p>Or use the module switcher in the admin panel. The value is cached for ten seconds.</p>
+    </li>
+  </ol>
+</section>
+
+<!-- ============================ RUN ============================ -->
+<section class="stage">
+  <h2>Run it</h2>
+  <p class="stage-note">Two terminals, left open.</p>
+
+  <div class="split">
+    <div class="term-card">
+      <div class="head">Terminal 1 · API</div>
+      <pre class="sh"><span class="p">cd</span> Backend
+npm run dev
+
+<span class="c"># http://localhost:5001</span></pre>
+    </div>
+    <div class="term-card">
+      <div class="head">Terminal 2 · Web</div>
+      <pre class="sh"><span class="p">cd</span> Frontend
+npm run dev
+
+<span class="c"># http://localhost:5173</span></pre>
+    </div>
+  </div>
+
+  <div class="note">
+    <p>
+      <strong>Background jobs are optional.</strong> With <code class="inline">REDIS_URL</code>
+      set you can also run <code class="inline">npm run worker:all</code>. Without it
+      the server logs that queues are skipped and carries on — the construction
+      module's own scheduled jobs use <code class="inline">node-cron</code> inside
+      the API process, so delay alerts, retention release and nightly reconciliation
+      run either way.
+    </p>
+  </div>
+</section>
+
+<!-- ============================ WALK IT ============================ -->
+<section class="stage">
+  <h2>Walk the flow</h2>
+  <p class="stage-note">
+    The demo seed leaves the platform mid-project on purpose, so you can see every
+    state at once. The OTP is <code class="inline">1234</code> for every account.
+  </p>
+
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Who</th><th>Where</th><th>Phone</th></tr></thead>
+      <tbody>
+        <tr><td>Customer</td><td><code>/user/auth/login</code></td><td><code>9111100001</code></td></tr>
+        <tr><td>Contractor</td><td><code>/contractor/login</code></td><td><code>9111100002</code></td></tr>
+        <tr><td>Second contractor</td><td><code>/contractor/login</code></td><td><code>9111100003</code></td></tr>
+        <tr><td>Awaiting approval</td><td><code>/contractor/login</code></td><td><code>9111100004</code></td></tr>
+        <tr><td>Admin</td><td>your existing admin login</td><td>—</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <ol class="flow">
+    <li><span><span class="who">Customer</span><span class="what">Open /construction</span><span class="see">Catalogue with photographs, search, and your live projects along the top.</span></span></li>
+    <li><span><span class="who">Customer</span><span class="what">Browse verified contractors</span><span class="see">Filter by city and rating. Open one: badges, past work, and a real review from the finished job.</span></span></li>
+    <li><span><span class="who">Customer</span><span class="what">My Quotes</span><span class="see">Two live quotes on the Bhopal kitchen, grouped so they can be compared side by side.</span></span></li>
+    <li><span><span class="who">Customer</span><span class="what">Open the live project</span><span class="see">One stage paid, one waiting on you, one frozen. The money bar adds up to the agreed price.</span></span></li>
+    <li><span><span class="who">Customer</span><span class="what">The four tabs</span><span class="see">Documents holds a superseded revision. Messages carries the conversation and the system notes. Disputes shows one resolved and one open.</span></span></li>
+    <li><span><span class="who">Customer</span><span class="what">Try to spend the whole wallet elsewhere</span><span class="see">Refused. The escrowed money is unreachable from food, taxi or any other module.</span></span></li>
+    <li><span><span class="who">Contractor</span><span class="what">Sign in as 9111100002</span><span class="see">Own login, own screens. Sidebar from the hamburger, five tabs along the bottom.</span></span></li>
+    <li><span><span class="who">Contractor</span><span class="what">Submit a stage with no photograph</span><span class="see">Refused — the photograph is what unlocks the payment.</span></span></li>
+    <li><span><span class="who">Contractor</span><span class="what">Trust score</span><span class="see">94 out of 100, with the lapsed insurance named as the biggest thing to fix.</span></span></li>
+    <li><span><span class="who">Admin</span><span class="what">Construction dashboard</span><span class="see">The work queue leads with the open dispute and the contractor waiting for approval.</span></span></li>
+    <li><span><span class="who">Admin</span><span class="what">Approve Nakoda Infra</span><span class="see">The button stays disabled until you verify their document — that gate is deliberate.</span></span></li>
+    <li><span><span class="who">Admin</span><span class="what">Resolve the open dispute</span><span class="see">Release, refund, split or dismiss. A split has to account for the whole frozen amount.</span></span></li>
+    <li><span><span class="who">Admin</span><span class="what">Payment control and Activity record</span><span class="see">Every rupee held, and every action anyone took — including your own team.</span></span></li>
+    <li><span><span class="who">Admin</span><span class="what">Switch the module off, then retry</span><span class="see">New enquiries stop. The open project still funds, approves and completes. This is the one behaviour worth confirming yourself.</span></span></li>
+  </ol>
+</section>
+
+<!-- ============================ TESTS ============================ -->
+<section class="stage">
+  <h2>Prove it still works</h2>
+  <p class="stage-note">
+    350 automated checks. The first three only read and are safe anywhere; the rest
+    create records and delete them.
+  </p>
+
+  <pre class="sh"><span class="c"># read-only — safe on any environment</span>
+npm run verify:escrow
+npm run verify:construction-projects
+npm run verify:construction-transparency
+
+<span class="c"># create and remove data — staging only</span>
+npm run test:construction-all
+
+<span class="c"># or one at a time</span>
+node scripts/verify-escrow-holds.js            <span class="c">#  43</span>
+node scripts/verify-contractor-onboarding.js   <span class="c">#  25</span>
+node scripts/verify-construction-pipeline.js   <span class="c">#  52</span>
+npm run test:construction-escrow               <span class="c">#  55</span>
+npm run test:construction-transparency         <span class="c">#  75</span>
+npm run test:construction-admin                <span class="c">#  49</span>
+npm run test:construction-acceptance           <span class="c">#  51</span></pre>
+
+  <div class="expect"><b>expect</b><span>Every run ends with <code>PASSED: n &nbsp; FAILED: 0</code>.</span></div>
+
+  <p>Two static checks worth putting in CI — both catch bugs that otherwise run silently:</p>
+  <pre class="sh"><span class="p">cd</span> Backend  &amp;&amp; npm run check:populate-imports
+<span class="p">cd</span> Frontend &amp;&amp; npm run check:api-clients</pre>
+</section>
+
+<!-- ============================ TROUBLE ============================ -->
+<section class="stage">
+  <h2>When something is wrong</h2>
+
+  <dl class="trouble">
+    <dt>Every API call fails and the network tab shows a refused connection</dt>
+    <dd>
+      Port mismatch. The backend is on <code class="inline">5001</code>; check that
+      <code class="inline">VITE_API_BASE_URL</code> is <code class="inline">/api/v1</code>
+      and not an absolute URL pointing somewhere else. Restart the Vite dev server after
+      changing <code class="inline">.env</code> — it only reads it at startup.
+    </dd>
+
+    <dt>Every login fails, on every module</dt>
+    <dd>
+      Check <code class="inline">JWT_ACCESS_EXPIRES</code>. It has to be a valid
+      timespan such as <code class="inline">7d</code> or <code class="inline">15m</code>.
+      Anything else makes token signing throw, and it takes down sign-in platform-wide,
+      not just construction.
+    </dd>
+
+    <dt>Funding or approving a stage throws a transaction error</dt>
+    <dd>
+      MongoDB is not running as a replica set. Every escrow movement is transactional.
+      Use Atlas, or start a local single-node replica set.
+    </dd>
+
+    <dt>The construction tab is missing for customers</dt>
+    <dd>
+      The module flag is off, or the ten-second cache has not expired yet. Check
+      <code class="inline">modules.construction</code> on the global settings document.
+    </dd>
+
+    <dt>A contractor cannot be approved</dt>
+    <dd>
+      Every document has to be verified first, and none may be expired. The detail
+      screen lists exactly what is blocking it. That gate exists so nobody approves
+      a contractor whose licence was never actually read.
+    </dd>
+
+    <dt>Screens are empty after seeding</dt>
+    <dd>
+      Run <code class="inline">npm run db:seed-construction</code> before
+      <code class="inline">npm run demo:construction</code> — the demo builds on the
+      catalogue and stops with a clear message if it is missing.
+    </dd>
+
+    <dt>Money does not look right</dt>
+    <dd>
+      <code class="inline">npm run verify:construction-projects</code> reconciles every
+      project against the escrow ledger and reports drift without repairing it. Drifting
+      money is something a person should look at, not something a script should quietly
+      correct.
+    </dd>
+  </dl>
+</section>
+
+<footer>
+  <p>
+    What is built and what is not: <strong>docs/construction-status-board.html</strong> ·
+    Technical decisions: <strong>docs/construction-module-blueprint.md</strong> ·
+    Production release: <strong>docs/construction-go-live-runbook.md</strong>
+  </p>
+  <p>
+    One item is still open before going live: written legal confirmation that SMS Pro
+    may hold customer funds. The module holds money in escrow and redistributes it
+    during a dispute, and that starts the moment the flag is on.
+  </p>
+</footer>
+
+</div>

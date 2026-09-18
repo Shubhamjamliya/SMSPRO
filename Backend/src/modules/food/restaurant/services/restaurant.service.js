@@ -1,0 +1,2899 @@
+import { FoodRestaurant } from '../models/restaurant.model.js';
+import { FoodRestaurantWallet } from '../models/restaurantWallet.model.js';
+import { FoodReferralSettings } from '../../admin/models/referralSettings.model.js';
+import { FoodReferralLog } from '../../admin/models/referralLog.model.js';
+import { FoodRestaurantOutletTimings } from '../models/outletTimings.model.js';
+import { attachOutletTimingsToRestaurants } from './outletTimings.service.js';
+import { uploadImageBuffer } from '../../../../services/cloudinary.service.js';
+import { ValidationError } from '../../../../core/auth/errors.js';
+import mongoose from 'mongoose';
+import { FoodZone } from '../../admin/models/zone.model.js';
+import { FoodOffer } from '../../admin/models/offer.model.js';
+import { FoodItem } from '../../admin/models/food.model.js';
+import { getRestaurantDiningSnapshot, submitRestaurantDiningRequest } from '../../dining/services/dining.service.js';
+import {
+    notifyAdminsSafely,
+    notifyOwnerSafely
+} from '../../../../core/notifications/firebase.service.js';
+import { isPointInPolygon } from '../../../../utils/geo.js';
+import { ensureDailyPassEligibility, activateDailyPass, checkRestaurantEligibilityReadOnly } from '../../subscriptions/services/wallet.service.js';
+import { logger } from '../../../../utils/logger.js';
+import {
+    buildRestaurantSubmissionSnapshot,
+    appendRestaurantStatusHistory,
+    ensureRestaurantResubmitBaseline,
+} from '../../shared/restaurantOnboardingWorkflow.js';
+import crypto from 'crypto';
+import { createRestaurantAuthSession } from '../../../../core/auth/auth.service.js';
+import {
+    normalizeRestaurantPhone,
+    prepareRestaurantPhoneFields,
+    stripLegacyRestaurantPhoneFields,
+    unsetLegacyRestaurantPhoneFields,
+    LEGACY_RESTAURANT_PHONE_UNSET,
+    assertRestaurantPhoneUnique,
+    assertRestaurantPhonesUnique,
+    findRestaurantByLoginPhone,
+} from '../utils/restaurantPhone.utils.js';
+
+
+const normalizeName = (value) =>
+    String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/-/g, ' ')
+        .replace(/\s+/g, ' ');
+
+const normalizePhone = (value) => normalizeRestaurantPhone(value);
+
+const pickNonEmptyStr = (...values) => {
+    for (const value of values) {
+        const text = String(value || '').trim();
+        if (text) return text;
+    }
+    return '';
+};
+
+const normalizeRatingValue = (value) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return 0;
+    return Math.max(0, Math.min(5, Number(numeric.toFixed(1))));
+};
+
+const activeItemLookupStages = () => [
+    {
+        $lookup: {
+            from: 'food_items',
+            let: { restaurantObjectId: '$_id' },
+            pipeline: [
+                {
+                    $match: {
+                        $expr: { $eq: ['$restaurantId', '$$restaurantObjectId'] },
+                        approvalStatus: 'approved',
+                        isAvailable: { $ne: false }
+                    }
+                },
+                { $limit: 1 },
+                { $project: { _id: 1 } }
+            ],
+            as: 'activeVisibilityItems'
+        }
+    },
+    {
+        $addFields: {
+            activeItemCount: { $size: '$activeVisibilityItems' }
+        }
+    },
+    {
+        $match: {
+            isVisibleToUsers: { $ne: false },
+            $or: [
+                { showRestaurantToUsersWithoutItems: true },
+                { hasHadActiveItems: true },
+                { activeItemCount: { $gt: 0 } }
+            ]
+        }
+    }
+];
+
+const ensurePublicRestaurantVisible = async (restaurant) => {
+    if (!restaurant || restaurant.isVisibleToUsers === false) return false;
+    if (restaurant.showRestaurantToUsersWithoutItems === true || restaurant.hasHadActiveItems === true) return true;
+
+    const activeItems = await FoodItem.countDocuments({
+        restaurantId: restaurant._id,
+        approvalStatus: 'approved',
+        isAvailable: { $ne: false }
+    });
+
+    if (activeItems > 0) {
+        await FoodRestaurant.updateOne(
+            { _id: restaurant._id, hasHadActiveItems: { $ne: true } },
+            { $set: { hasHadActiveItems: true } }
+        );
+        return true;
+    }
+
+    return false;
+};
+
+const normalizeTotalRatingsValue = (value) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return 0;
+    return Math.max(0, Math.floor(numeric));
+};
+
+const toUrl = (v) => (v && (typeof v === 'string' ? v : v.url)) ? (typeof v === 'string' ? v : v.url) : '';
+
+const normalizeRestaurantTime = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    const toHHMM = (hour, minute) => {
+        const h = Number(hour);
+        const m = Number(minute);
+        if (!Number.isFinite(h) || !Number.isFinite(m)) return '';
+        if (h < 0 || h > 23 || m < 0 || m > 59) return '';
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    };
+
+    // HH:mm / H:mm
+    const hhmm = raw.match(/^(\d{1,2}):(\d{2})$/);
+    if (hhmm) return toHHMM(hhmm[1], hhmm[2]);
+
+    // hh:mm AM/PM
+    const ampm = raw.match(/^(\d{1,2}):(\d{2})\s*([AaPp][Mm])$/);
+    if (ampm) {
+        let hour = Number(ampm[1]);
+        const minute = Number(ampm[2]);
+        const period = ampm[3].toUpperCase();
+        if (!Number.isFinite(hour) || !Number.isFinite(minute)) return '';
+        if (hour < 1 || hour > 12 || minute < 0 || minute > 59) return '';
+        if (period === 'AM') hour = hour === 12 ? 0 : hour;
+        if (period === 'PM') hour = hour === 12 ? 12 : hour + 12;
+        return toHHMM(hour, minute);
+    }
+
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+        return toHHMM(parsed.getHours(), parsed.getMinutes());
+    }
+
+    return '';
+};
+
+const timeToMinutes = (value) => {
+    const normalized = normalizeRestaurantTime(value);
+    if (!normalized) return null;
+    const [h, m] = normalized.split(':').map(Number);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+    return h * 60 + m;
+};
+
+const parseEstimatedDeliveryMinutes = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    const matches = raw.match(/\d+/g);
+    if (!matches || !matches.length) return null;
+    const numbers = matches.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n >= 0);
+    if (!numbers.length) return null;
+    return Math.round(numbers[numbers.length - 1]);
+};
+
+const RESTAURANT_ONBOARDING_IMAGE_RULES = {
+    minBytes: 20 * 1024,
+    documentMaxBytes: 2.5 * 1024 * 1024,
+    menuMaxBytes: 5 * 1024 * 1024,
+    allowedMimeTypes: new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'])
+};
+
+const validateRestaurantOnboardingFile = (file, fieldName) => {
+    if (!file) return;
+    const label = {
+        profileImage: 'Restaurant profile image',
+        panImage: 'PAN image',
+        gstImage: 'GST image',
+        fssaiImage: 'FSSAI image',
+        menuImages: 'Menu image'
+    }[fieldName] || 'Image';
+    const maxBytes = fieldName === 'menuImages'
+        ? RESTAURANT_ONBOARDING_IMAGE_RULES.menuMaxBytes
+        : RESTAURANT_ONBOARDING_IMAGE_RULES.documentMaxBytes;
+
+    if (!RESTAURANT_ONBOARDING_IMAGE_RULES.allowedMimeTypes.has(file.mimetype)) {
+        throw new ValidationError(`${label} must be JPG, PNG, WEBP, HEIC or HEIF`);
+    }
+    if (Number(file.size || 0) < RESTAURANT_ONBOARDING_IMAGE_RULES.minBytes) {
+        throw new ValidationError(`${label} is too small. Minimum size is 20KB`);
+    }
+    if (Number(file.size || 0) > maxBytes) {
+        throw new ValidationError(`${label} is too large. Maximum size is ${fieldName === 'menuImages' ? '5MB' : '2.5MB'}`);
+    }
+};
+
+const validateRestaurantOnboardingFiles = (files = {}) => {
+    ['profileImage', 'panImage', 'gstImage', 'fssaiImage'].forEach((fieldName) => {
+        if (files?.[fieldName]?.[0]) validateRestaurantOnboardingFile(files[fieldName][0], fieldName);
+    });
+    (files?.menuImages || []).forEach((file) => validateRestaurantOnboardingFile(file, 'menuImages'));
+};
+
+const toRestaurantProfile = (doc) => {
+    if (!doc) return null;
+    const loc = doc.location && typeof doc.location === 'object' ? doc.location : null;
+    const location =
+        (loc?.formattedAddress ||
+            loc?.address ||
+            loc?.addressLine1 ||
+            loc?.addressLine2 ||
+            loc?.area ||
+            loc?.city ||
+            loc?.state ||
+            loc?.pincode ||
+            loc?.landmark ||
+            doc.addressLine1 ||
+            doc.addressLine2 ||
+            doc.area ||
+            doc.city ||
+            doc.state ||
+            doc.pincode ||
+            doc.landmark)
+            ? {
+                type: loc?.type || 'Point',
+                coordinates: Array.isArray(loc?.coordinates) ? loc.coordinates : undefined,
+                latitude: typeof loc?.latitude === 'number' ? loc.latitude : (Array.isArray(loc?.coordinates) ? loc.coordinates[1] : undefined),
+                longitude: typeof loc?.longitude === 'number' ? loc.longitude : (Array.isArray(loc?.coordinates) ? loc.coordinates[0] : undefined),
+                formattedAddress: loc?.formattedAddress || loc?.address || '',
+                address: loc?.address || loc?.formattedAddress || '',
+                addressLine1: loc?.addressLine1 || doc.addressLine1 || '',
+                addressLine2: loc?.addressLine2 || doc.addressLine2 || '',
+                area: loc?.area || doc.area || '',
+                city: loc?.city || doc.city || '',
+                state: loc?.state || doc.state || '',
+                pincode: loc?.pincode || doc.pincode || '',
+                landmark: loc?.landmark || doc.landmark || ''
+            }
+            : null;
+
+    const menuImages = Array.isArray(doc.menuImages)
+        ? doc.menuImages.map((m) => toUrl(m)).filter(Boolean).map((url) => ({ url, publicId: null }))
+        : [];
+    const coverImages = Array.isArray(doc.coverImages)
+        ? doc.coverImages.map((m) => toUrl(m)).filter(Boolean).map((url) => ({ url, publicId: null }))
+        : [];
+
+    return {
+        id: doc._id,
+        _id: doc._id,
+        restaurantId: doc.restaurantId || undefined,
+        name: doc.restaurantName || '',
+        restaurantName: doc.restaurantName || '',
+        zoneId: doc.zoneId ? String(doc.zoneId) : '',
+        cuisines: Array.isArray(doc.cuisines) ? doc.cuisines : [],
+        location,
+        ownerName: doc.ownerName || '',
+        ownerEmail: doc.ownerEmail || '',
+        ownerPhone: doc.ownerPhone || '',
+        primaryContactNumber: doc.primaryContactNumber || '',
+        panNumber: doc.panNumber || doc.pan || '',
+        nameOnPan: doc.nameOnPan || '',
+        panImage: (doc.panImage || doc.pan_image) ? { url: (doc.panImage || doc.pan_image) } : null,
+        gstRegistered: Boolean(doc.gstRegistered),
+        gstNumber: doc.gstNumber || doc.gst || '',
+        gstLegalName: doc.gstLegalName || '',
+        gstAddress: doc.gstAddress || '',
+        gstImage: (doc.gstImage || doc.gst_image) ? { url: (doc.gstImage || doc.gst_image) } : null,
+        fssaiNumber: doc.fssaiNumber || doc.fssai || '',
+        fssaiExpiry: doc.fssaiExpiry || doc.fssai_expiry || null,
+        fssaiImage: (doc.fssaiImage || doc.fssai_image) ? { url: (doc.fssaiImage || doc.fssai_image) } : null,
+        accountNumber: doc.accountNumber || '',
+        ifscCode: doc.ifscCode || '',
+        accountHolderName: doc.accountHolderName || '',
+        accountType: doc.accountType || '',
+        upiId: doc.upiId || '',
+        upiQrImage: doc.upiQrImage ? { url: doc.upiQrImage } : null,
+        pureVegRestaurant: Boolean(doc.pureVegRestaurant),
+        zoneId: doc.zoneId ? String(doc.zoneId?._id || doc.zoneId) : '',
+        zoneName: doc.zoneId?.name || doc.zoneId?.zoneName || doc.zoneId?.serviceLocation || '',
+        profileImage: doc.profileImage ? { url: doc.profileImage } : null,
+        menuImages,
+        coverImages,
+        openingTime: normalizeRestaurantTime(doc.openingTime) || null,
+        closingTime: normalizeRestaurantTime(doc.closingTime) || null,
+        openDays: Array.isArray(doc.openDays) ? doc.openDays : [],
+        dayTimings: Array.isArray(doc.dayTimings) ? doc.dayTimings : [],
+        estimatedDeliveryTime: doc.estimatedDeliveryTime || '',
+        featuredDish: doc.featuredDish || '',
+        featuredPrice: doc.featuredPrice ?? null,
+        offer: doc.offer || '',
+        estimatedDeliveryTimeMinutes:
+            Number.isFinite(Number(doc.estimatedDeliveryTimeMinutes))
+                ? Number(doc.estimatedDeliveryTimeMinutes)
+                : null,
+        diningSettings: {
+            isEnabled: doc.diningSettings?.isEnabled !== false,
+            maxGuests: Math.max(1, parseInt(doc.diningSettings?.maxGuests, 10) || 6),
+            diningType: String(doc.diningSettings?.diningType || 'family-dining').trim() || 'family-dining'
+        },
+        diningCategoryIds: Array.isArray(doc.diningCategoryIds) ? doc.diningCategoryIds.map((id) => String(id)) : [],
+        diningCategories: Array.isArray(doc.diningCategories) ? doc.diningCategories : [],
+        diningPrimaryCategoryId: doc.diningPrimaryCategoryId || null,
+        pendingDiningRequest: doc.pendingDiningRequest || null,
+        isAcceptingOrders: doc.isAcceptingOrders !== false,
+        showRestaurantToUsersWithoutItems: doc.showRestaurantToUsersWithoutItems === true,
+        isVisibleToUsers: doc.isVisibleToUsers !== false,
+        hasHadActiveItems: doc.hasHadActiveItems === true,
+        status: doc.status || null,
+        onboardingStep: doc.onboardingStep ?? 1,
+        rejectionReason: doc.rejectionReason || '',
+        rejectedAt: doc.rejectedAt || null,
+        previousSubmission: doc.previousSubmission || null,
+        statusHistory: Array.isArray(doc.statusHistory) ? doc.statusHistory : [],
+        pendingUpdateStatus: doc.pendingUpdateStatus || 'none',
+        pendingUpdateReason: doc.pendingUpdateReason || '',
+        pendingUpdateRequestedAt: doc.pendingUpdateRequestedAt || null,
+        pendingUpdates: doc.pendingUpdates || null,
+        createdAt: doc.createdAt,
+        updatedAt: doc.updatedAt,
+        rating: normalizeRatingValue(doc.rating),
+        totalRatings: normalizeTotalRatingsValue(doc.totalRatings)
+    };
+};
+
+const toFiniteNumber = (value) => {
+    const n = typeof value === 'number' ? value : parseFloat(String(value));
+    return Number.isFinite(n) ? n : null;
+};
+
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const normalizeCuisine = (value) => String(value || '').trim().slice(0, 80);
+
+const parseSortBy = (value) => {
+    const v = String(value || '').trim();
+    const allowed = new Set(['nearest', 'rating', 'newest', 'deliveryTime', 'price-low', 'price-high', 'rating-high', 'rating-low']);
+    return allowed.has(v) ? v : null;
+};
+
+const zoneToPolygon = (zoneDoc) => {
+    const coords = Array.isArray(zoneDoc?.coordinates) ? zoneDoc.coordinates : [];
+    if (coords.length < 3) return null;
+    const ring = coords
+        .map((c) => [Number(c.longitude), Number(c.latitude)])
+        .filter((pair) => pair.every((n) => Number.isFinite(n)));
+    if (ring.length < 3) return null;
+    const first = ring[0];
+    const last = ring[ring.length - 1];
+    if (first[0] !== last[0] || first[1] !== last[1]) ring.push(first);
+    return { type: 'Polygon', coordinates: [ring] };
+};
+
+const buildZoneRestaurantFilter = async (zoneIdRaw) => {
+    const trimmedZoneId = String(zoneIdRaw || '').trim();
+    if (!trimmedZoneId || !mongoose.Types.ObjectId.isValid(trimmedZoneId)) {
+        return null;
+    }
+
+    const zoneClauses = [{ zoneId: new mongoose.Types.ObjectId(trimmedZoneId) }];
+    const zoneDoc = await FoodZone.findOne({ _id: trimmedZoneId, isActive: true }).lean();
+    const polygon = zoneToPolygon(zoneDoc);
+    if (polygon) {
+        zoneClauses.push({ location: { $geoWithin: { $geometry: polygon } } });
+    }
+
+    return { $or: zoneClauses };
+};
+
+const notifyAdminsAboutRestaurantProfileReview = async (restaurantId, restaurantName) => {
+    try {
+        const { notifyAdminsSafely } = await import('../../../../core/notifications/firebase.service.js');
+        void notifyAdminsSafely({
+            title: 'Restaurant Profile Updated',
+            body: `Restaurant "${restaurantName || 'Unknown Restaurant'}" updated its profile and is pending approval again.`,
+            data: {
+                type: 'restaurant_profile_updated',
+                subType: 'restaurant',
+                id: String(restaurantId)
+            }
+        });
+    } catch (e) {
+        console.error('Failed to notify admins of restaurant profile resubmission:', e);
+    }
+};
+
+// export const registerRestaurant = async (payload, files, authUserId) => {
+//     const {
+//         restaurantName,
+//         ownerName,
+//         ownerEmail,
+//         ownerPhone,
+//         primaryContactNumber,
+//         pureVegRestaurant,
+//         addressLine1,
+//         addressLine2,
+//         area,
+//         city,
+//         state,
+//         pincode,
+//         landmark,
+//         formattedAddress,
+//         latitude,
+//         longitude,
+//         zoneId,
+//         cuisines,
+//         openingTime,
+//         closingTime,
+//         openDays,
+//         estimatedDeliveryTime,
+//         panNumber,
+//         nameOnPan,
+//         gstRegistered,
+//         gstNumber,
+//         gstLegalName,
+//         gstAddress,
+//         fssaiNumber,
+//         fssaiExpiry,
+//         accountNumber,
+//         ifscCode,
+//         accountHolderName,
+//         accountType,
+//         featuredDish,
+//         offer,
+//         ref,
+//         razorpayOrderId,
+//         razorpayPaymentId,
+//         razorpaySignature
+//     } = payload;
+
+//     if (!ownerPhone) {
+//         throw new ValidationError('Owner phone is required to register a restaurant');
+//     }
+
+//     const { digits: ownerPhoneDigits, last10: ownerPhoneLast10 } = normalizePhone(ownerPhone);
+//     if (!ownerPhoneLast10) {
+//         throw new ValidationError('Owner phone is invalid');
+//     }
+
+//     const restaurantNameNormalized = normalizeName(restaurantName);
+//     if (!restaurantNameNormalized) {
+//         throw new ValidationError('Restaurant name is required to register a restaurant');
+//     }
+
+//     const images = {};
+
+//     if (files?.profileImage?.[0]) {
+//         images.profileImage = await uploadImageBuffer(files.profileImage[0].buffer, 'food/restaurants/profile');
+//     }
+//     if (files?.panImage?.[0]) {
+//         images.panImage = await uploadImageBuffer(files.panImage[0].buffer, 'food/restaurants/pan');
+//     }
+//     if (files?.gstImage?.[0]) {
+//         images.gstImage = await uploadImageBuffer(files.gstImage[0].buffer, 'food/restaurants/gst');
+//     }
+//     if (files?.fssaiImage?.[0]) {
+//         images.fssaiImage = await uploadImageBuffer(files.fssaiImage[0].buffer, 'food/restaurants/fssai');
+//     }
+
+//     let menuImages = [];
+//     if (files?.menuImages?.length) {
+//         menuImages = await Promise.all(
+//             files.menuImages.map((file) => uploadImageBuffer(file.buffer, 'food/restaurants/menu'))
+//         );
+//     }
+
+//     const normalizedOpeningTime = normalizeRestaurantTime(openingTime);
+//     const normalizedClosingTime = normalizeRestaurantTime(closingTime);
+//     const openingMinutes = timeToMinutes(normalizedOpeningTime);
+//     const closingMinutes = timeToMinutes(normalizedClosingTime);
+//     if (openingMinutes !== null && closingMinutes !== null) {
+//         if (openingMinutes === closingMinutes) {
+//             throw new ValidationError('Opening time and closing time cannot be same');
+//         }
+//         if (closingMinutes < openingMinutes) {
+//             throw new ValidationError('Closing time cannot be less than opening time');
+//         }
+//     }
+//     const estimatedDeliveryTimeText = String(estimatedDeliveryTime || '').trim();
+//     const estimatedDeliveryTimeMinutes = parseEstimatedDeliveryMinutes(estimatedDeliveryTimeText);
+
+//     try {
+//         const latNum = toFiniteNumber(latitude);
+//         const lngNum = toFiniteNumber(longitude);
+
+//         // Strict Geofencing Validation
+//         if (!zoneId) {
+//             throw new ValidationError('Zone is required');
+//         }
+//         if (latNum === null || lngNum === null) {
+//             throw new ValidationError('Invalid address coordinates');
+//         }
+
+//         const zone = await FoodZone.findById(zoneId).lean();
+//         if (!zone || !Array.isArray(zone.coordinates) || zone.coordinates.length < 3) {
+//             throw new ValidationError('Invalid zone configuration');
+//         }
+
+//         if (!isPointInPolygon(latNum, lngNum, zone.coordinates)) {
+//             throw new ValidationError('Selected address is outside the selected zone');
+//         }
+
+//         const restaurantData = {
+//             restaurantName,
+//             restaurantNameNormalized,
+//             ownerName,
+//             ownerEmail,
+//             ownerPhone: ownerPhoneDigits,
+//             ownerPhoneDigits,
+//             ownerPhoneLast10,
+//             primaryContactNumber,
+//             pureVegRestaurant: pureVegRestaurant === true,
+//             zoneId: zoneId && mongoose.Types.ObjectId.isValid(String(zoneId).trim())
+//                 ? new mongoose.Types.ObjectId(String(zoneId).trim())
+//                 : undefined,
+//             location: {
+//                 type: 'Point',
+//                 coordinates: latNum !== null && lngNum !== null ? [lngNum, latNum] : undefined,
+//                 latitude: latNum ?? undefined,
+//                 longitude: lngNum ?? undefined,
+//                 formattedAddress: typeof formattedAddress === 'string' ? formattedAddress.trim() : '',
+//                 address: typeof formattedAddress === 'string' ? formattedAddress.trim() : '',
+//                 addressLine1: addressLine1 || '',
+//                 addressLine2: addressLine2 || '',
+//                 area: area || '',
+//                 city: city || '',
+//                 state: state || '',
+//                 pincode: pincode || '',
+//                 landmark: landmark || ''
+//             },
+//             cuisines: cuisines || [],
+//             openingTime: normalizedOpeningTime || undefined,
+//             closingTime: normalizedClosingTime || undefined,
+//             openDays: openDays || [],
+//             estimatedDeliveryTime: estimatedDeliveryTimeText || undefined,
+//             estimatedDeliveryTimeMinutes: estimatedDeliveryTimeMinutes ?? undefined,
+//             panNumber,
+//             nameOnPan,
+//             gstRegistered,
+//             gstNumber,
+//             gstLegalName,
+//             gstAddress,
+//             fssaiNumber,
+//             fssaiExpiry,
+//             accountNumber,
+//             ifscCode,
+//             accountHolderName,
+//             accountType,
+//             featuredDish: featuredDish || '',
+//             offer: offer || '',
+//             ...images
+//         };
+//         if (menuImages && menuImages.length > 0) {
+//             restaurantData.menuImages = menuImages;
+//         }
+
+//         console.log("Looking for existing restaurant with:", { ownerPhoneDigits, ownerPhoneLast10, authUserId });
+//         let existingRestaurant = null;
+
+//         if (authUserId) {
+//             existingRestaurant = await FoodRestaurant.findById(authUserId);
+//         }
+
+//         if (!existingRestaurant) {
+//             existingRestaurant = await FoodRestaurant.findOne({
+//                 $or: [
+//                     { ownerPhoneDigits },
+//                     ...(ownerPhoneLast10 ? [{ ownerPhoneLast10 }] : [])
+//                 ]
+//             });
+//         }
+
+//         console.log("Found existingRestaurant?", !!existingRestaurant, existingRestaurant?.status);
+//         let restaurant;
+
+//         if (existingRestaurant) {
+//             if (existingRestaurant.status === 'rejected') {
+//                 // Verify onboarding fee payment if required for re-onboarding
+//                 const { verifyAndConsumeOnboardingPayment } = await import('../../../common/services/onboardingFee.service.js');
+//                 await verifyAndConsumeOnboardingPayment({
+//                     role: 'RESTAURANT',
+//                     paymentDetails: { razorpayOrderId, razorpayPaymentId, razorpaySignature },
+//                     userDetails: { name: ownerName, phone: ownerPhoneDigits, email: ownerEmail },
+//                     entityId: existingRestaurant._id
+//                 });
+
+//                 Object.assign(existingRestaurant, restaurantData);
+//                 existingRestaurant.status = 'pending';
+//                 existingRestaurant.approvalStatus = 'pending';
+//                 existingRestaurant.rejectionReason = null;
+//                 existingRestaurant.rejectedAt = null;
+//                 existingRestaurant.isActive = false;
+//                 await existingRestaurant.save();
+//                 restaurant = existingRestaurant;
+//             } else {
+//                 throw new ValidationError('Restaurant with this owner phone already exists');
+//             }
+//         } else {
+//             // Verify onboarding fee payment if required
+//             const { verifyAndConsumeOnboardingPayment } = await import('../../../common/services/onboardingFee.service.js');
+//             await verifyAndConsumeOnboardingPayment({
+//                 role: 'RESTAURANT',
+//                 paymentDetails: { razorpayOrderId, razorpayPaymentId, razorpaySignature },
+//                 userDetails: { name: ownerName, phone: ownerPhoneDigits, email: ownerEmail }
+//             });
+
+//             restaurant = await FoodRestaurant.create(restaurantData);
+
+//             // Associate created restaurant ID with payment log if paid
+//             if (razorpayOrderId) {
+//                 const { OnboardingPaymentLog } = await import('../../../common/models/onboardingPaymentLog.model.js');
+//                 await OnboardingPaymentLog.updateOne(
+//                     { razorpayOrderId },
+//                     { $set: { entityId: restaurant._id } }
+//                 );
+//             }
+//         }
+
+//         // --- Referral Handling ---
+//         const refRaw = typeof ref === 'string' ? String(ref).trim() : '';
+//         if (refRaw) {
+//             try {
+//                 // Find referrer by ID or referralCode
+//                 const referrerQuery = mongoose.Types.ObjectId.isValid(refRaw)
+//                     ? { _id: new mongoose.Types.ObjectId(refRaw) }
+//                     : { referralCode: refRaw };
+
+//                 const [referrer, settingsDoc] = await Promise.all([
+//                     FoodRestaurant.findOne(referrerQuery).select('_id referralCount').lean(),
+//                     FoodReferralSettings.findOne({ isActive: true }).sort({ createdAt: -1 }).lean()
+//                 ]);
+
+//                 if (referrer && settingsDoc) {
+//                     const referrerReward = Math.max(0, Number(settingsDoc.restaurant?.referrerReward) || 0);
+//                     const refereeReward = Math.max(0, Number(settingsDoc.restaurant?.refereeReward) || 0);
+//                     const limit = Math.max(0, Number(settingsDoc.restaurant?.limit) || 0);
+
+//                     if (
+//                         (referrerReward > 0 || refereeReward > 0) &&
+//                         limit > 0 &&
+//                         Number(referrer.referralCount || 0) < limit
+//                     ) {
+//                         // Update new restaurant with referrer info
+//                         await FoodRestaurant.updateOne({ _id: restaurant._id }, { $set: { referredBy: referrer._id } });
+
+//                         // Create referral log as PENDING
+//                         await FoodReferralLog.create({
+//                             referrerId: referrer._id,
+//                             refereeId: restaurant._id,
+//                             role: 'RESTAURANT',
+//                             rewardAmount: referrerReward,
+//                             referrerRewardAmount: referrerReward,
+//                             refereeRewardAmount: refereeReward,
+//                             status: 'pending'
+//                         });
+//                     } else {
+//                         await FoodReferralLog.create({
+//                             referrerId: referrer._id,
+//                             refereeId: restaurant._id,
+//                             role: 'RESTAURANT',
+//                             rewardAmount: referrerReward,
+//                             status: 'rejected',
+//                             reason:
+//                                 referrerReward <= 0 && refereeReward <= 0
+//                                     ? 'reward_disabled'
+//                                     : limit <= 0
+//                                         ? 'limit_disabled'
+//                                         : 'limit_reached'
+//                         });
+//                     }
+//                 }
+//             } catch (e) {
+//                 console.error('Referral log creation failed (restaurant):', e);
+//             }
+//         }
+//         // --- End Referral Handling ---
+
+//         const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+//         const shortDaysMap = { Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday" };
+//         const normalizedOpenDays = (openDays || []).map(d => shortDaysMap[d] || d);
+//         const timingsArray = daysOfWeek.map(day => {
+//             const isOpen = normalizedOpenDays.includes(day);
+//             return {
+//                 day,
+//                 isOpen,
+//                 openingTime: normalizedOpeningTime || '',
+//                 closingTime: normalizedClosingTime || ''
+//             };
+//         });
+
+//         await FoodRestaurantOutletTimings.findOneAndUpdate(
+//             { restaurantId: restaurant._id },
+//             { $set: { timings: timingsArray } },
+//             { upsert: true, new: true }
+//         );
+
+//         try {
+//             const { notifyAdminsSafely } = await import('../../../../core/notifications/firebase.service.js');
+//             void notifyAdminsSafely({
+//                 title: 'New Restaurant Registration 🏪',
+//                 body: `A new restaurant "${restaurant.restaurantName}" has registered and is pending approval.`,
+//                 data: {
+//                     type: 'new_registration',
+//                     subType: 'restaurant',
+//                     id: String(restaurant._id)
+//                 }
+//             });
+//         } catch (e) {
+//             console.error('Failed to notify admins of new restaurant registration:', e);
+//         }
+
+//         return restaurant.toObject();
+//     } catch (err) {
+//         // Handle uniqueness conflicts deterministically (race-safe).
+//         if (err && (err.code === 11000 || err?.name === 'MongoServerError')) {
+//             throw new ValidationError('Restaurant with this name and owner phone already exists');
+//         }
+//         throw err;
+//     }
+// };
+
+// };
+
+export const getOnboardingDraftByPhone = async (phone) => {
+    const doc = await findRestaurantByLoginPhone(phone, { lean: true });
+    if (!doc) return null;
+    return toRestaurantProfile(doc);
+};
+
+/**
+ * After admin approval, waiting-page clients exchange phone + claim token for a JWT session.
+ */
+export const activateRestaurantSessionAfterApproval = async ({ phone, sessionClaimToken } = {}) => {
+    if (!phone) {
+        throw new ValidationError('Phone is required');
+    }
+
+    const restaurant = await findRestaurantByLoginPhone(phone);
+    if (!restaurant) {
+        throw new ValidationError('Restaurant not found');
+    }
+
+    if (restaurant.status === 'pending') {
+        throw new ValidationError('Your restaurant registration is still pending approval.');
+    }
+    if (restaurant.status === 'rejected') {
+        throw new ValidationError('Your restaurant registration was rejected. Please edit and resubmit.');
+    }
+    if (restaurant.status !== 'approved') {
+        throw new ValidationError('Restaurant is not approved yet.');
+    }
+    if (restaurant.isDeleted === true || restaurant.accountStatus === 'deleted') {
+        throw new ValidationError('Your account has been deleted/deactivated. Please contact support.');
+    }
+
+    const storedClaim = String(restaurant.sessionClaimToken || '').trim();
+    const providedClaim = String(sessionClaimToken || '').trim();
+    if (storedClaim && (!providedClaim || providedClaim !== storedClaim)) {
+        throw new ValidationError('Session claim is invalid. Please log in with OTP.');
+    }
+
+    restaurant.sessionClaimToken = undefined;
+    await restaurant.save();
+
+    const authSession = await createRestaurantAuthSession(restaurant);
+    return {
+        ...authSession,
+        restaurant: toRestaurantProfile(restaurant.toObject ? restaurant.toObject() : restaurant),
+        user: toRestaurantProfile(restaurant.toObject ? restaurant.toObject() : restaurant),
+    };
+};
+
+const findRestaurantByOwnerPhone = async (ownerPhone) =>
+    findRestaurantByLoginPhone(ownerPhone);
+
+const buildStep1Data = (payload) => {
+    const {
+        restaurantName,
+        ownerName,
+        ownerEmail,
+        ownerPhone,
+        primaryContactNumber,
+        pureVegRestaurant,
+        addressLine1,
+        addressLine2,
+        area,
+        city,
+        state,
+        pincode,
+        landmark,
+        formattedAddress,
+        latitude,
+        longitude,
+        zoneId
+    } = payload;
+
+    // Both phones are login-capable. OTP-verified phone may arrive as primaryContactNumber or ownerPhone.
+    const loginPhoneRaw = primaryContactNumber || ownerPhone;
+    if (!loginPhoneRaw) {
+        throw new ValidationError('Primary contact number is required');
+    }
+    if (!String(ownerPhone || '').trim()) {
+        throw new ValidationError('Owner phone number is required');
+    }
+    if (!restaurantName?.trim()) {
+        throw new ValidationError('Restaurant name is required');
+    }
+    if (!ownerName?.trim()) {
+        throw new ValidationError('Owner name is required');
+    }
+    if (typeof pureVegRestaurant !== 'boolean') {
+        throw new ValidationError('Please select whether the restaurant is pure veg');
+    }
+
+    const phones = prepareRestaurantPhoneFields(
+        {
+            primaryContactNumber: loginPhoneRaw,
+            ownerPhone,
+        },
+        { requireBoth: true }
+    );
+    const restaurantNameNormalized = normalizeName(restaurantName);
+    const latNum = toFiniteNumber(latitude);
+    const lngNum = toFiniteNumber(longitude);
+
+    if (!zoneId) {
+        throw new ValidationError('Zone is required');
+    }
+    if (latNum === null || lngNum === null) {
+        throw new ValidationError('Invalid address coordinates');
+    }
+
+    return {
+        restaurantName: restaurantName.trim(),
+        restaurantNameNormalized,
+        ownerName: ownerName.trim(),
+        ownerEmail: ownerEmail?.trim() || '',
+        // Owner phone + primary contact (both login-capable; store last-10 only)
+        ownerPhone: phones.ownerPhone,
+        primaryContactNumber: phones.primaryContactNumber,
+        pureVegRestaurant,
+        zoneId: mongoose.Types.ObjectId.isValid(String(zoneId).trim())
+            ? new mongoose.Types.ObjectId(String(zoneId).trim())
+            : undefined,
+        location: {
+            type: 'Point',
+            coordinates: [lngNum, latNum],
+            latitude: latNum,
+            longitude: lngNum,
+            formattedAddress: typeof formattedAddress === 'string' ? formattedAddress.trim() : '',
+            address: typeof formattedAddress === 'string' ? formattedAddress.trim() : '',
+            addressLine1: addressLine1 || '',
+            addressLine2: addressLine2 || '',
+            area: area || '',
+            city: city || '',
+            state: state || '',
+            pincode: pincode || '',
+            landmark: landmark || ''
+        },
+        addressLine1: addressLine1 || '',
+        addressLine2: addressLine2 || '',
+        area: area || '',
+        city: city || '',
+        state: state || '',
+        pincode: pincode || '',
+        landmark: landmark || ''
+    };
+};
+
+export const saveOnboardingStep = async (stepNum, payload, files) => {
+    validateRestaurantOnboardingFiles(files);
+    const step = Number(stepNum);
+    if (![1, 2, 3].includes(step)) {
+        throw new ValidationError('Invalid onboarding step');
+    }
+
+    // Identity / login phone = Primary Contact (OTP-verified phone may arrive as ownerPhone).
+    const loginPhone = payload.primaryContactNumber || payload.ownerPhone;
+    if (!loginPhone) {
+        throw new ValidationError('Primary contact number is required');
+    }
+
+    let existingRestaurant = await findRestaurantByLoginPhone(loginPhone);
+
+    if (existingRestaurant) {
+        if (existingRestaurant.status === 'rejected') {
+            // Allow field updates while editing a rejected application.
+            // Final registerRestaurant call moves status to pending.
+        } else if (existingRestaurant.status === 'approved') {
+            throw new ValidationError('Restaurant already registered');
+        } else if (existingRestaurant.status === 'pending') {
+            throw new ValidationError('Restaurant registration is pending approval');
+        }
+    }
+
+    let restaurant;
+
+    if (step === 1) {
+        const step1Data = buildStep1Data(payload);
+
+        await assertRestaurantPhonesUnique(
+            {
+                primaryContactNumber: step1Data.primaryContactNumber,
+                ownerPhone: step1Data.ownerPhone,
+            },
+            { excludeRestaurantId: existingRestaurant?._id || null }
+        );
+
+        const zone = await FoodZone.findById(step1Data.zoneId).lean();
+        if (!zone || !Array.isArray(zone.coordinates) || zone.coordinates.length < 3) {
+            throw new ValidationError('Invalid zone configuration');
+        }
+        const latNum = step1Data.location.latitude;
+        const lngNum = step1Data.location.longitude;
+        if (!isPointInPolygon(latNum, lngNum, zone.coordinates)) {
+            throw new ValidationError('Selected address is outside the selected zone');
+        }
+
+        const keepRejectedStatus = existingRestaurant?.status === 'rejected';
+        const restaurantData = {
+            ...step1Data,
+            // Keep rejected until final resubmit so login still shows rejection + Edit & Resubmit.
+            status: keepRejectedStatus ? 'rejected' : 'onboarding',
+            onboardingStep: 2,
+            isActive: false
+        };
+
+        if (!existingRestaurant) {
+            try {
+                restaurant = await FoodRestaurant.create(restaurantData);
+                await unsetLegacyRestaurantPhoneFields(restaurant._id);
+            } catch (err) {
+                if (err && (err.code === 11000 || err?.name === 'MongoServerError')) {
+                    throw new ValidationError(
+                        'Phone number is already registered with another restaurant',
+                        'PHONE_EXISTS'
+                    );
+                }
+                throw err;
+            }
+        } else {
+            if (keepRejectedStatus) {
+                ensureRestaurantResubmitBaseline(existingRestaurant);
+            }
+            Object.assign(existingRestaurant, restaurantData);
+            stripLegacyRestaurantPhoneFields(existingRestaurant);
+            try {
+                await existingRestaurant.save();
+                await unsetLegacyRestaurantPhoneFields(existingRestaurant._id);
+            } catch (err) {
+                if (err && (err.code === 11000 || err?.name === 'MongoServerError')) {
+                    throw new ValidationError(
+                        'Phone number is already registered with another restaurant',
+                        'PHONE_EXISTS'
+                    );
+                }
+                throw err;
+            }
+            restaurant = existingRestaurant;
+        }
+    } else {
+        const canContinueOnboarding =
+            existingRestaurant &&
+            (existingRestaurant.status === 'onboarding' || existingRestaurant.status === 'rejected');
+        if (!canContinueOnboarding) {
+            throw new ValidationError('Please complete step 1 before continuing');
+        }
+
+        if (existingRestaurant.status === 'rejected') {
+            ensureRestaurantResubmitBaseline(existingRestaurant);
+        }
+
+        restaurant = existingRestaurant;
+
+        if (step === 2) {
+            const normalizedOpeningTime = normalizeRestaurantTime(payload.openingTime);
+            const normalizedClosingTime = normalizeRestaurantTime(payload.closingTime);
+            const openingMinutes = timeToMinutes(normalizedOpeningTime);
+            const closingMinutes = timeToMinutes(normalizedClosingTime);
+            if (openingMinutes !== null && closingMinutes !== null) {
+                if (openingMinutes === closingMinutes) {
+                    throw new ValidationError('Opening time and closing time cannot be same');
+                }
+                if (closingMinutes < openingMinutes) {
+                    throw new ValidationError('Closing time cannot be less than opening time');
+                }
+            }
+
+            const images = {};
+            if (files?.profileImage?.[0]) {
+                images.profileImage = await uploadImageBuffer(files.profileImage[0].buffer, 'food/restaurants/profile');
+            } else if (!restaurant.profileImage) {
+                throw new ValidationError('Restaurant profile image is required');
+            }
+
+            let menuImages = [];
+            if (files?.menuImages?.length) {
+                menuImages = await Promise.all(
+                    files.menuImages.map((file) => uploadImageBuffer(file.buffer, 'food/restaurants/menu'))
+                );
+            }
+            if (menuImages.length === 0 && (!restaurant.menuImages || restaurant.menuImages.length === 0)) {
+                throw new ValidationError('At least one menu image is required');
+            }
+
+            const cuisines = Array.isArray(payload.cuisines)
+                ? payload.cuisines
+                : (typeof payload.cuisines === 'string'
+                    ? payload.cuisines.split(',').map((c) => c.trim()).filter(Boolean)
+                    : []);
+
+            Object.assign(restaurant, {
+                cuisines,
+                openingTime: normalizedOpeningTime || undefined,
+                closingTime: normalizedClosingTime || undefined,
+                showRestaurantToUsersWithoutItems:
+                    payload.showRestaurantToUsersWithoutItems === true ||
+                    payload.showRestaurantToUsersWithoutItems === 'true' ||
+                    payload.showRestaurantToUsersWithoutItems === '1',
+                openDays: Array.isArray(payload.openDays)
+                    ? payload.openDays
+                    : (typeof payload.openDays === 'string'
+                        ? payload.openDays.split(',').map((d) => d.trim()).filter(Boolean)
+                        : []),
+                dayTimings: payload.dayTimings || [],
+                onboardingStep: 3,
+                ...images
+            });
+            if (menuImages.length > 0) {
+                restaurant.menuImages = menuImages;
+            }
+            await restaurant.save();
+        }
+
+        if (step === 3) {
+            const images = {};
+            if (files?.panImage?.[0]) {
+                images.panImage = await uploadImageBuffer(files.panImage[0].buffer, 'food/restaurants/pan');
+            } else if (!restaurant.panImage) {
+                throw new ValidationError('PAN image is required');
+            }
+            if (files?.gstImage?.[0]) {
+                images.gstImage = await uploadImageBuffer(files.gstImage[0].buffer, 'food/restaurants/gst');
+            }
+            if (files?.fssaiImage?.[0]) {
+                images.fssaiImage = await uploadImageBuffer(files.fssaiImage[0].buffer, 'food/restaurants/fssai');
+            } else if (!restaurant.fssaiImage) {
+                throw new ValidationError('FSSAI image is required');
+            }
+
+            const gstRegistered = payload.gstRegistered === true || payload.gstRegistered === 'true';
+            if (gstRegistered && !files?.gstImage?.[0] && !restaurant.gstImage) {
+                throw new ValidationError('GST image is required when GST registered');
+            }
+
+            Object.assign(restaurant, {
+                panNumber: payload.panNumber || '',
+                nameOnPan: payload.nameOnPan || '',
+                gstRegistered,
+                gstNumber: payload.gstNumber || '',
+                gstLegalName: payload.gstLegalName || '',
+                gstAddress: payload.gstAddress || '',
+                fssaiNumber: payload.fssaiNumber || '',
+                fssaiExpiry: payload.fssaiExpiry || undefined,
+                accountNumber: payload.accountNumber || '',
+                ifscCode: payload.ifscCode || '',
+                accountHolderName: payload.accountHolderName || '',
+                accountType: payload.accountType || '',
+                onboardingStep: 4,
+                ...images
+            });
+            await restaurant.save();
+        }
+    }
+
+    return toRestaurantProfile(restaurant.toObject ? restaurant.toObject() : restaurant);
+};
+
+// new code
+export const registerRestaurant = async (payload, files, authUserId) => {
+    validateRestaurantOnboardingFiles(files);
+    const {
+        restaurantName,
+        ownerName,
+        ownerEmail,
+        ownerPhone,
+        primaryContactNumber,
+        pureVegRestaurant,
+        addressLine1,
+        addressLine2,
+        area,
+        city,
+        state,
+        pincode,
+        landmark,
+        formattedAddress,
+        latitude,
+        longitude,
+        zoneId,
+        cuisines,
+        openingTime,
+        closingTime,
+        openDays,
+        estimatedDeliveryTime,
+        panNumber,
+        nameOnPan,
+        gstRegistered,
+        gstNumber,
+        gstLegalName,
+        gstAddress,
+        fssaiNumber,
+        fssaiExpiry,
+        accountNumber,
+        ifscCode,
+        accountHolderName,
+        accountType,
+        featuredDish,
+        offer,
+        ref,
+        razorpayOrderId,
+        razorpayPaymentId,
+        razorpaySignature,
+        finalizeOnboarding,
+        showRestaurantToUsersWithoutItems
+    } = payload;
+
+    const isFinalizeOnboarding =
+        finalizeOnboarding === true ||
+        finalizeOnboarding === 'true' ||
+        finalizeOnboarding === '1';
+
+    if (!ownerPhone && !primaryContactNumber) {
+        throw new ValidationError('Primary contact number is required to register a restaurant');
+    }
+
+    const loginPhone = primaryContactNumber || ownerPhone;
+    const phones = prepareRestaurantPhoneFields(
+        {
+            primaryContactNumber: loginPhone,
+            ownerPhone: ownerPhone || loginPhone,
+        },
+        { requireBoth: true }
+    );
+    const loginLast10 = phones.primaryContactNumber;
+    const ownerPhoneLast10 = phones.ownerPhone;
+    const ownerPhoneDigits = normalizePhone(ownerPhone || loginPhone).digits || loginLast10;
+
+    const restaurantNameNormalized = normalizeName(restaurantName);
+    if (!restaurantNameNormalized) {
+        // Allow empty payload name when finalizing an in-progress onboarding draft;
+        // existing restaurant record will supply missing fields below.
+        if (!isFinalizeOnboarding) {
+            throw new ValidationError('Restaurant name is required to register a restaurant');
+        }
+    }
+
+    const images = {};
+
+    if (files?.profileImage?.[0]) {
+        images.profileImage = await uploadImageBuffer(files.profileImage[0].buffer, 'food/restaurants/profile');
+    }
+    if (files?.panImage?.[0]) {
+        images.panImage = await uploadImageBuffer(files.panImage[0].buffer, 'food/restaurants/pan');
+    }
+    if (files?.gstImage?.[0]) {
+        images.gstImage = await uploadImageBuffer(files.gstImage[0].buffer, 'food/restaurants/gst');
+    }
+    if (files?.fssaiImage?.[0]) {
+        images.fssaiImage = await uploadImageBuffer(files.fssaiImage[0].buffer, 'food/restaurants/fssai');
+    }
+
+    let menuImages = [];
+    if (files?.menuImages?.length) {
+        menuImages = await Promise.all(
+            files.menuImages.map((file) => uploadImageBuffer(file.buffer, 'food/restaurants/menu'))
+        );
+    }
+
+    const normalizedOpeningTime = normalizeRestaurantTime(openingTime);
+    const normalizedClosingTime = normalizeRestaurantTime(closingTime);
+    const openingMinutes = timeToMinutes(normalizedOpeningTime);
+    const closingMinutes = timeToMinutes(normalizedClosingTime);
+    if (openingMinutes !== null && closingMinutes !== null) {
+        if (openingMinutes === closingMinutes) {
+            throw new ValidationError('Opening time and closing time cannot be same');
+        }
+        if (closingMinutes < openingMinutes) {
+            throw new ValidationError('Closing time cannot be less than opening time');
+        }
+    }
+    const estimatedDeliveryTimeText = String(estimatedDeliveryTime || '').trim();
+    const estimatedDeliveryTimeMinutes = parseEstimatedDeliveryMinutes(estimatedDeliveryTimeText);
+
+    try {
+        const latNum = toFiniteNumber(latitude);
+        const lngNum = toFiniteNumber(longitude);
+
+        // Strict Geofencing Validation
+        if (!zoneId) {
+            throw new ValidationError('Zone is required');
+        }
+        if (latNum === null || lngNum === null) {
+            throw new ValidationError('Invalid address coordinates');
+        }
+
+        const zone = await FoodZone.findById(zoneId).lean();
+        if (!zone || !Array.isArray(zone.coordinates) || zone.coordinates.length < 3) {
+            throw new ValidationError('Invalid zone configuration');
+        }
+
+        if (!isPointInPolygon(latNum, lngNum, zone.coordinates)) {
+            throw new ValidationError('Selected address is outside the selected zone');
+        }
+
+        const restaurantData = {
+            restaurantName,
+            restaurantNameNormalized,
+            ownerName,
+            ownerEmail,
+            ownerPhone: ownerPhoneLast10,
+            primaryContactNumber: loginLast10,
+            pureVegRestaurant: pureVegRestaurant === true,
+            zoneId: zoneId && mongoose.Types.ObjectId.isValid(String(zoneId).trim())
+                ? new mongoose.Types.ObjectId(String(zoneId).trim())
+                : undefined,
+            location: {
+                type: 'Point',
+                coordinates: latNum !== null && lngNum !== null ? [lngNum, latNum] : undefined,
+                latitude: latNum ?? undefined,
+                longitude: lngNum ?? undefined,
+                formattedAddress: typeof formattedAddress === 'string' ? formattedAddress.trim() : '',
+                address: typeof formattedAddress === 'string' ? formattedAddress.trim() : '',
+                addressLine1: addressLine1 || '',
+                addressLine2: addressLine2 || '',
+                area: area || '',
+                city: city || '',
+                state: state || '',
+                pincode: pincode || '',
+                landmark: landmark || ''
+            },
+            cuisines: cuisines || [],
+            openingTime: normalizedOpeningTime || undefined,
+            closingTime: normalizedClosingTime || undefined,
+            openDays: openDays || [],
+            dayTimings: payload.dayTimings || [],
+            estimatedDeliveryTime: estimatedDeliveryTimeText || undefined,
+            estimatedDeliveryTimeMinutes: estimatedDeliveryTimeMinutes ?? undefined,
+            showRestaurantToUsersWithoutItems:
+                showRestaurantToUsersWithoutItems === true ||
+                showRestaurantToUsersWithoutItems === 'true' ||
+                showRestaurantToUsersWithoutItems === '1',
+            isVisibleToUsers: true,
+            panNumber,
+            nameOnPan,
+            gstRegistered,
+            gstNumber,
+            gstLegalName,
+            gstAddress,
+            fssaiNumber,
+            fssaiExpiry,
+            accountNumber,
+            ifscCode,
+            accountHolderName,
+            accountType,
+            featuredDish: featuredDish || '',
+            offer: offer || '',
+            ...images
+        };
+        if (menuImages && menuImages.length > 0) {
+            restaurantData.menuImages = menuImages;
+        }
+
+        console.log("Looking for existing restaurant with:", { loginLast10, authUserId });
+
+        // Search by login phone (primary contact) so a previously-rejected restaurant is found.
+        let existingRestaurant = await findRestaurantByLoginPhone(loginLast10);
+
+        // Only fall back to authUserId when there is no phone match at all.
+        if (!existingRestaurant && authUserId) {
+            existingRestaurant = await FoodRestaurant.findById(authUserId);
+        }
+
+        await assertRestaurantPhonesUnique(
+            {
+                primaryContactNumber: loginLast10,
+                ownerPhone: ownerPhoneLast10,
+            },
+            { excludeRestaurantId: existingRestaurant?._id || null }
+        );
+
+        console.log("Found existingRestaurant?", !!existingRestaurant, existingRestaurant?.status);
+        let restaurant;
+
+        if (existingRestaurant) {
+            if (existingRestaurant.status === 'rejected') {
+                // Verify onboarding fee payment if required for re-onboarding.
+                // verifyAndConsumeOnboardingPayment automatically bypasses the check
+                // if the user already paid successfully in a prior attempt.
+                const { verifyAndConsumeOnboardingPayment } = await import('../../../common/services/onboardingFee.service.js');
+                await verifyAndConsumeOnboardingPayment({
+                    role: 'RESTAURANT',
+                    paymentDetails: { razorpayOrderId, razorpayPaymentId, razorpaySignature },
+                    userDetails: { name: ownerName, phone: ownerPhoneDigits, email: ownerEmail },
+                    entityId: existingRestaurant._id
+                });
+
+                // Keep the frozen rejected baseline (set on reject / first edit).
+                // Do NOT snapshot current values here — edits may already be applied.
+                const preservedBaseline = existingRestaurant.previousSubmission
+                    || buildRestaurantSubmissionSnapshot(existingRestaurant);
+                appendRestaurantStatusHistory(existingRestaurant, {
+                    action: 'resubmitted',
+                    note: existingRestaurant.rejectionReason
+                        ? `Resubmitted after rejection: ${existingRestaurant.rejectionReason}`
+                        : 'Restaurant resubmitted onboarding application',
+                });
+
+                Object.assign(existingRestaurant, restaurantData);
+                existingRestaurant.previousSubmission = preservedBaseline;
+                existingRestaurant.status = 'pending';
+                existingRestaurant.rejectionReason = undefined;
+                existingRestaurant.rejectedAt = undefined;
+                existingRestaurant.rejectedBy = undefined;
+                existingRestaurant.onboardingStep = 5;
+                existingRestaurant.isActive = false;
+                existingRestaurant.sessionClaimToken = crypto.randomBytes(32).toString('hex');
+                stripLegacyRestaurantPhoneFields(existingRestaurant);
+                await existingRestaurant.save();
+                await unsetLegacyRestaurantPhoneFields(existingRestaurant._id);
+                restaurant = existingRestaurant;
+            } else if (existingRestaurant.status === 'onboarding') {
+                const finalRestaurantName = pickNonEmptyStr(restaurantName, existingRestaurant.restaurantName);
+                const finalOwnerName = pickNonEmptyStr(ownerName, existingRestaurant.ownerName);
+                if (!normalizeName(finalRestaurantName)) {
+                    throw new ValidationError('Restaurant name is required');
+                }
+
+                restaurantData.restaurantName = finalRestaurantName;
+                restaurantData.restaurantNameNormalized = normalizeName(finalRestaurantName);
+                restaurantData.ownerName = finalOwnerName;
+
+                const { verifyAndConsumeOnboardingPayment } = await import('../../../common/services/onboardingFee.service.js');
+                await verifyAndConsumeOnboardingPayment({
+                    role: 'RESTAURANT',
+                    paymentDetails: { razorpayOrderId, razorpayPaymentId, razorpaySignature },
+                    userDetails: { name: ownerName, phone: ownerPhoneDigits, email: ownerEmail },
+                    entityId: existingRestaurant._id
+                });
+
+                if (isFinalizeOnboarding || !files?.menuImages?.length) {
+                    if (!menuImages.length && (!existingRestaurant.menuImages || existingRestaurant.menuImages.length === 0)) {
+                        throw new ValidationError('At least one menu image is required');
+                    }
+                    if (!images.profileImage && !existingRestaurant.profileImage) {
+                        throw new ValidationError('Restaurant profile image is required');
+                    }
+                    if (!images.panImage && !existingRestaurant.panImage) {
+                        throw new ValidationError('PAN image is required');
+                    }
+                    if (!images.fssaiImage && !existingRestaurant.fssaiImage) {
+                        throw new ValidationError('FSSAI image is required');
+                    }
+                    if (gstRegistered && !images.gstImage && !existingRestaurant.gstImage) {
+                        throw new ValidationError('GST image is required when GST registered');
+                    }
+                }
+
+                Object.assign(existingRestaurant, restaurantData);
+                existingRestaurant.status = 'pending';
+                existingRestaurant.onboardingStep = 5;
+                existingRestaurant.isActive = false;
+                existingRestaurant.sessionClaimToken = crypto.randomBytes(32).toString('hex');
+                appendRestaurantStatusHistory(existingRestaurant, {
+                    action: 'submitted',
+                    note: 'Initial onboarding submitted for approval',
+                });
+                stripLegacyRestaurantPhoneFields(existingRestaurant);
+                await existingRestaurant.save();
+                await unsetLegacyRestaurantPhoneFields(existingRestaurant._id);
+                restaurant = existingRestaurant;
+            } else {
+                throw new ValidationError('Restaurant with this primary contact number already exists');
+            }
+        } else {
+            // Brand-new registration – must not collide with an existing owner email.
+            const normalizedEmail = String(ownerEmail || '').trim().toLowerCase();
+            if (normalizedEmail) {
+                const emailTaken = await FoodRestaurant.findOne({
+                    ownerEmail: normalizedEmail,
+                    status: { $ne: 'onboarding' },
+                }).select('_id ownerPhone status').lean();
+                if (emailTaken) {
+                    throw new ValidationError(
+                        'This email is already used by another restaurant. Use a different email, or Edit & Resubmit your existing application.'
+                    );
+                }
+            }
+
+            const { verifyAndConsumeOnboardingPayment } = await import('../../../common/services/onboardingFee.service.js');
+            await verifyAndConsumeOnboardingPayment({
+                role: 'RESTAURANT',
+                paymentDetails: { razorpayOrderId, razorpayPaymentId, razorpaySignature },
+                userDetails: { name: ownerName, phone: ownerPhoneDigits, email: ownerEmail }
+            });
+
+            restaurant = await FoodRestaurant.create({
+                ...restaurantData,
+                status: 'pending',
+                onboardingStep: 5,
+                isActive: false,
+                sessionClaimToken: crypto.randomBytes(32).toString('hex'),
+                statusHistory: [{
+                    action: 'submitted',
+                    note: 'Initial onboarding submitted for approval',
+                    changedAt: new Date(),
+                }],
+            });
+            await unsetLegacyRestaurantPhoneFields(restaurant._id);
+
+            // Associate created restaurant ID with payment log if paid
+            if (razorpayOrderId) {
+                const { OnboardingPaymentLog } = await import('../../../common/models/onboardingPaymentLog.model.js');
+                await OnboardingPaymentLog.updateOne(
+                    { razorpayOrderId },
+                    { $set: { entityId: restaurant._id } }
+                );
+            }
+        }
+
+        // --- Referral Handling ---
+        const refRaw = typeof ref === 'string' ? String(ref).trim() : '';
+        if (refRaw) {
+            try {
+                // Find referrer by ID or referralCode
+                const referrerQuery = mongoose.Types.ObjectId.isValid(refRaw)
+                    ? { _id: new mongoose.Types.ObjectId(refRaw) }
+                    : { referralCode: refRaw };
+
+                const [referrer, settingsDoc] = await Promise.all([
+                    FoodRestaurant.findOne(referrerQuery).select('_id referralCount').lean(),
+                    FoodReferralSettings.findOne({ isActive: true }).sort({ createdAt: -1 }).lean()
+                ]);
+
+                if (referrer && settingsDoc) {
+                    const referrerReward = Math.max(0, Number(settingsDoc.restaurant?.referrerReward) || 0);
+                    const refereeReward = Math.max(0, Number(settingsDoc.restaurant?.refereeReward) || 0);
+                    const limit = Math.max(0, Number(settingsDoc.restaurant?.limit) || 0);
+
+                    if (
+                        (referrerReward > 0 || refereeReward > 0) &&
+                        limit > 0 &&
+                        Number(referrer.referralCount || 0) < limit
+                    ) {
+                        // Update new restaurant with referrer info
+                        await FoodRestaurant.updateOne({ _id: restaurant._id }, { $set: { referredBy: referrer._id } });
+
+                        // Create referral log as PENDING
+                        await FoodReferralLog.create({
+                            referrerId: referrer._id,
+                            refereeId: restaurant._id,
+                            role: 'RESTAURANT',
+                            rewardAmount: referrerReward,
+                            referrerRewardAmount: referrerReward,
+                            refereeRewardAmount: refereeReward,
+                            status: 'pending'
+                        });
+                    } else {
+                        await FoodReferralLog.create({
+                            referrerId: referrer._id,
+                            refereeId: restaurant._id,
+                            role: 'RESTAURANT',
+                            rewardAmount: referrerReward,
+                            status: 'rejected',
+                            reason:
+                                referrerReward <= 0 && refereeReward <= 0
+                                    ? 'reward_disabled'
+                                    : limit <= 0
+                                        ? 'limit_disabled'
+                                        : 'limit_reached'
+                        });
+                    }
+                }
+            } catch (e) {
+                console.error('Referral log creation failed (restaurant):', e);
+            }
+        }
+        // --- End Referral Handling ---
+
+        const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+        const shortDaysMap = { Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday" };
+        const normalizedOpenDays = (openDays || []).map(d => shortDaysMap[d] || d);
+        const timingsArray = daysOfWeek.map(day => {
+            const isOpen = normalizedOpenDays.includes(day);
+            return {
+                day,
+                isOpen,
+                openingTime: normalizedOpeningTime || '',
+                closingTime: normalizedClosingTime || ''
+            };
+        });
+
+        await FoodRestaurantOutletTimings.findOneAndUpdate(
+            { restaurantId: restaurant._id },
+            { $set: { timings: timingsArray } },
+            { upsert: true, new: true }
+        );
+
+        try {
+            const { notifyAdminsSafely } = await import('../../../../core/notifications/firebase.service.js');
+            void notifyAdminsSafely({
+                title: 'New Restaurant Registration 🏪',
+                body: `A new restaurant "${restaurant.restaurantName}" has registered and is pending approval.`,
+                data: {
+                    type: 'new_registration',
+                    subType: 'restaurant',
+                    id: String(restaurant._id)
+                }
+            });
+        } catch (e) {
+            console.error('Failed to notify admins of new restaurant registration:', e);
+        }
+
+        const profile = toRestaurantProfile(restaurant.toObject ? restaurant.toObject() : restaurant);
+        // Keep claim token private to the submitter response (not exposed via public draft).
+        profile.sessionClaimToken = restaurant.sessionClaimToken || null;
+
+        let authSession = null;
+        try {
+            authSession = await createRestaurantAuthSession(restaurant);
+        } catch (sessionErr) {
+            console.error('Failed to create pending restaurant session:', sessionErr);
+        }
+
+        return {
+            restaurant: profile,
+            accessToken: authSession?.accessToken || null,
+            refreshToken: authSession?.refreshToken || null,
+        };
+    } catch (err) {
+        // Handle uniqueness conflicts deterministically (race-safe).
+        if (err && (err.code === 11000 || err?.name === 'MongoServerError')) {
+            throw new ValidationError(
+                'Phone number is already registered with another restaurant',
+                'PHONE_EXISTS'
+            );
+        }
+        throw err;
+    }
+};
+
+
+// end
+export const getCurrentRestaurantProfile = async (restaurantId) => {
+    if (!restaurantId) return null;
+    const doc = await FoodRestaurant.findById(restaurantId)
+        .select(
+            [
+                'restaurantId',
+                'restaurantName',
+                'cuisines',
+                'location',
+                'addressLine1',
+                'addressLine2',
+                'area',
+                'city',
+                'state',
+                'pincode',
+                'landmark',
+                'ownerName',
+                'ownerEmail',
+                'ownerPhone',
+                'primaryContactNumber',
+                'accountNumber',
+                'ifscCode',
+                'accountHolderName',
+                'accountType',
+                'upiId',
+                'upiQrImage',
+                'pureVegRestaurant',
+                'zoneId',
+                'profileImage',
+                'coverImages',
+                'menuImages',
+                'openingTime',
+                'closingTime',
+                'openDays',
+                'estimatedDeliveryTime',
+                'featuredDish',
+                'featuredPrice',
+                'offer',
+                'estimatedDeliveryTimeMinutes',
+                'diningSettings',
+                'isAcceptingOrders',
+                'status',
+                'fssaiNumber',
+                'fssaiExpiry',
+                'gstNumber',
+                'gstRegistered',
+                'gstLegalName',
+                'gstAddress',
+                'panNumber',
+                'nameOnPan',
+                'fssaiImage',
+                'gstImage',
+                'panImage',
+                'pendingUpdateStatus',
+                'pendingUpdateReason',
+                'pendingUpdateRequestedAt',
+                'pendingUpdates',
+                'createdAt',
+                'updatedAt'
+            ].join(' ')
+        )
+        .populate('zoneId', 'name zoneName serviceLocation')
+        .lean();
+    if (!doc) return null;
+
+    // Determine derived acceptsOrders status using the pure read-only check
+    let isAcceptingOrders = doc.isAcceptingOrders !== false;
+    try {
+        const eligibility = await checkRestaurantEligibilityReadOnly(restaurantId, 'RESTAURANT');
+        if (isAcceptingOrders !== eligibility.shouldAppearOnline) {
+            isAcceptingOrders = eligibility.shouldAppearOnline;
+
+            // Self-heal the database state asynchronously (non-blocking)
+            FoodRestaurant.updateOne(
+                { _id: restaurantId },
+                { $set: { isAcceptingOrders } }
+            ).catch(err => {
+                logger.error(`[SELF-HEAL] Failed to update isAcceptingOrders to ${isAcceptingOrders} for restaurant ${restaurantId}: ${err.message}`);
+            });
+        }
+    } catch (err) {
+        logger.error(`[PROFILE-HYDRATION] Error validating accepts orders status: ${err.message}`);
+    }
+
+    const diningSnapshot = await getRestaurantDiningSnapshot(restaurantId);
+    return toRestaurantProfile({
+        ...doc,
+        isAcceptingOrders,
+        diningCategoryIds: diningSnapshot.categoryIds,
+        diningCategories: diningSnapshot.categories,
+        diningPrimaryCategoryId: diningSnapshot.primaryCategoryId,
+        pendingDiningRequest: diningSnapshot.pendingDiningRequest
+    });
+};
+
+export const updateRestaurantAcceptingOrders = async (restaurantId, isAcceptingOrders) => {
+    if (!restaurantId) {
+        throw new ValidationError('Invalid restaurant id');
+    }
+
+    const currentRestaurant = await FoodRestaurant.findById(restaurantId).select('isAcceptingOrders');
+    if (!currentRestaurant) {
+        throw new ValidationError('Restaurant not found');
+    }
+
+    const value = Boolean(isAcceptingOrders);
+
+    // PHASE 3C-2: SUBSCRIPTION TRIGGER (CLOSED -> OPEN ONLY) (Bypassed)
+    /* Comment out the related restriction/check logic in the codebase instead of removing it completely.
+    if (currentRestaurant.isAcceptingOrders === false && value === true) {
+        const eligibility = await ensureDailyPassEligibility(restaurantId, 'RESTAURANT');
+        
+        if (!eligibility.eligible) {
+            throw new ValidationError(eligibility.reason === 'LOW_BALANCE' 
+                ? 'Insufficient subscription balance. Minimum ₹1000 required to open.' 
+                : 'Subscription access blocked.');
+        }
+
+        if (eligibility.shouldDeduct) {
+            const result = await activateDailyPass(restaurantId, 'RESTAURANT');
+            if (!result.success) {
+                throw new ValidationError(result.reason === 'LOW_BALANCE' 
+                    ? 'Insufficient subscription balance for daily pass.' 
+                    : 'Failed to activate daily pass.');
+            }
+        }
+    }
+    */
+
+    const doc = await FoodRestaurant.findByIdAndUpdate(
+        restaurantId,
+        { $set: { isAcceptingOrders: value } },
+        {
+            new: true,
+            runValidators: true,
+            projection: [
+                'restaurantId',
+                'restaurantName',
+                'cuisines',
+                'location',
+                'addressLine1',
+                'addressLine2',
+                'area',
+                'city',
+                'state',
+                'pincode',
+                'landmark',
+                'ownerName',
+                'ownerEmail',
+                'ownerPhone',
+                'primaryContactNumber',
+                'accountNumber',
+                'ifscCode',
+                'accountHolderName',
+                'accountType',
+                'upiId',
+                'upiQrImage',
+                'pureVegRestaurant',
+                'profileImage',
+                'coverImages',
+                'menuImages',
+                'openingTime',
+                'closingTime',
+                'openDays',
+                'diningSettings',
+                'isAcceptingOrders',
+                'status',
+                'createdAt',
+                'updatedAt'
+            ].join(' ')
+        }
+    ).lean();
+    return toRestaurantProfile(doc);
+};
+
+export const updateCurrentRestaurantDiningSettings = async (restaurantId, body = {}) => {
+    if (!restaurantId) {
+        throw new ValidationError('Invalid restaurant id');
+    }
+    await submitRestaurantDiningRequest(restaurantId, body);
+    return getCurrentRestaurantProfile(restaurantId);
+};
+
+export const updateRestaurantProfile = async (restaurantId, body = {}) => {
+    if (!restaurantId) {
+        throw new ValidationError('Invalid restaurant id');
+    }
+
+    const currentRestaurant = await FoodRestaurant.findById(restaurantId)
+        .select([
+            'restaurantName',
+            'restaurantNameNormalized',
+            'ownerPhone',
+            'primaryContactNumber',
+            'status',
+            'pureVegRestaurant',
+            'zoneId',
+            'fssaiNumber',
+            'fssaiExpiry',
+            'fssaiImage',
+            'panNumber',
+            'nameOnPan',
+            'panImage',
+            'gstRegistered',
+            'gstNumber',
+            'gstLegalName',
+            'gstAddress',
+            'gstImage',
+            'accountHolderName',
+            'accountNumber',
+            'ifscCode',
+            'accountType',
+            'upiId',
+            'upiQrImage',
+            'pendingUpdates',
+            'pendingUpdateStatus',
+            'pendingUpdateReason',
+        ].join(' '))
+        .lean();
+
+    if (!currentRestaurant) {
+        throw new ValidationError('Restaurant not found');
+    }
+
+    const update = {};
+    const pendingProfileUpdates = {};
+
+    // Owner/contact fields (used by restaurant Contact Details screens)
+    if (body.ownerName !== undefined) {
+        const ownerName = String(body.ownerName || '').trim();
+        if (!ownerName) {
+            throw new ValidationError('Owner name cannot be empty');
+        }
+        if (ownerName.length > 120) {
+            throw new ValidationError('Owner name is too long');
+        }
+        update.ownerName = ownerName;
+    }
+
+    if (body.ownerEmail !== undefined) {
+        const ownerEmail = String(body.ownerEmail || '').trim().toLowerCase();
+        if (ownerEmail) {
+            const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,5}$/;
+            if (!EMAIL_REGEX.test(ownerEmail)) {
+                throw new ValidationError('Invalid email format (e.g. name@gmail.com)');
+            }
+            if (ownerEmail.length > 254) {
+                throw new ValidationError('Owner email is too long');
+            }
+            update.ownerEmail = ownerEmail;
+        } else {
+            update.ownerEmail = '';
+        }
+    }
+
+    // Owner phone is also a login number — keep globally unique across both phone fields.
+    if (body.ownerPhone !== undefined) {
+        const { last10, digits, isValid10 } = normalizePhone(body.ownerPhone);
+        if (digits && !isValid10 && digits.length < 8) {
+            throw new ValidationError('Owner phone is invalid');
+        }
+
+        const nextOwnerPhone = last10 || digits || '';
+        const currentOwnerPhone =
+            normalizePhone(currentRestaurant.ownerPhone).last10 ||
+            String(currentRestaurant.ownerPhone || '').trim();
+
+        if (nextOwnerPhone !== currentOwnerPhone) {
+            if (nextOwnerPhone) {
+                await assertRestaurantPhoneUnique(nextOwnerPhone, {
+                    excludeRestaurantId: currentRestaurant._id,
+                    label: 'Owner phone number',
+                });
+            }
+            update.ownerPhone = nextOwnerPhone;
+        }
+    }
+
+    if (body.primaryContactNumber !== undefined) {
+        const { last10, isValid10 } = normalizePhone(body.primaryContactNumber);
+        if (!isValid10) {
+            throw new ValidationError('Primary contact number must be exactly 10 digits');
+        }
+
+        const currentPrimary =
+            normalizePhone(
+                currentRestaurant.primaryContactNumber || currentRestaurant.ownerPhone
+            ).last10 || '';
+
+        if (last10 !== currentPrimary) {
+            await assertRestaurantPhoneUnique(last10, {
+                excludeRestaurantId: currentRestaurant._id,
+                label: 'Primary contact number',
+            });
+            update.primaryContactNumber = last10;
+        }
+    }
+
+    if (body.pureVegRestaurant !== undefined) {
+        let nextPureVeg = null;
+        if (typeof body.pureVegRestaurant === 'boolean') {
+            nextPureVeg = body.pureVegRestaurant;
+        } else if (typeof body.pureVegRestaurant === 'string') {
+            const normalized = body.pureVegRestaurant.trim().toLowerCase();
+            if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
+                nextPureVeg = true;
+            } else if (normalized === 'false' || normalized === '0' || normalized === 'no') {
+                nextPureVeg = false;
+            } else {
+                throw new ValidationError('pureVegRestaurant must be a boolean');
+            }
+        } else {
+            throw new ValidationError('pureVegRestaurant must be a boolean');
+        }
+
+        if (nextPureVeg !== Boolean(currentRestaurant.pureVegRestaurant)) {
+            update.pureVegRestaurant = nextPureVeg;
+            update._enforcePureVegVisibility = nextPureVeg;
+        }
+    }
+
+    if (body.zoneId !== undefined) {
+        const zoneId = String(body.zoneId || '').trim();
+        const nextZoneId = zoneId && mongoose.Types.ObjectId.isValid(zoneId)
+            ? new mongoose.Types.ObjectId(zoneId)
+            : undefined;
+        const currentZoneId = currentRestaurant.zoneId
+            ? String(currentRestaurant.zoneId._id || currentRestaurant.zoneId)
+            : '';
+        const nextZoneIdStr = nextZoneId ? String(nextZoneId) : '';
+
+        // Zone travels with address approval requests; otherwise apply immediately.
+        if (body.location !== undefined) {
+            if (nextZoneIdStr !== currentZoneId) {
+                pendingProfileUpdates.zoneId = nextZoneId;
+            }
+        } else {
+            update.zoneId = nextZoneId;
+        }
+    }
+
+    // Bank fields require admin approval (do not go live immediately).
+    const queueBankField = (key, value) => {
+        const current = currentRestaurant[key] == null ? '' : String(currentRestaurant[key]);
+        const next = value == null ? '' : String(value);
+        if (current !== next) pendingProfileUpdates[key] = value;
+    };
+
+    if (body.accountHolderName !== undefined) {
+        queueBankField('accountHolderName', String(body.accountHolderName || '').trim());
+    }
+    if (body.accountNumber !== undefined) {
+        queueBankField('accountNumber', String(body.accountNumber || '').replace(/\s|-/g, '').trim());
+    }
+    if (body.ifscCode !== undefined) {
+        queueBankField('ifscCode', String(body.ifscCode || '').trim().toUpperCase());
+    }
+    if (body.accountType !== undefined) {
+        queueBankField('accountType', String(body.accountType || '').trim());
+    }
+    if (body.upiId !== undefined) {
+        queueBankField('upiId', String(body.upiId || '').trim());
+    }
+    if (body.upiQrImage !== undefined || body.upiQrCode !== undefined) {
+        const qrImage = body.upiQrImage !== undefined ? body.upiQrImage : body.upiQrCode;
+        const nextQr = String(qrImage || '').trim();
+        const currentQr = typeof currentRestaurant.upiQrImage === 'string'
+            ? currentRestaurant.upiQrImage
+            : String(currentRestaurant.upiQrImage?.url || '');
+        if (currentQr !== nextQr) pendingProfileUpdates.upiQrImage = nextQr;
+    }
+
+    // Name updates are immediate (no admin approval).
+    if (body.name !== undefined || body.restaurantName !== undefined) {
+        const raw = body.name !== undefined ? body.name : body.restaurantName;
+        const name = String(raw || '').trim();
+        if (!name) {
+            throw new ValidationError('Restaurant name cannot be empty');
+        }
+        update.restaurantName = name;
+        update.restaurantNameNormalized = normalizeName(name) || undefined;
+    }
+
+    if (body.cuisines !== undefined) {
+        if (!Array.isArray(body.cuisines)) {
+            throw new ValidationError('Cuisines must be an array of strings');
+        }
+        const cuisines = body.cuisines
+            .map((c) => String(c || '').trim())
+            .filter(Boolean)
+            .slice(0, 50);
+        update.cuisines = cuisines;
+    }
+
+    if (body.location !== undefined) {
+        const loc = body.location && typeof body.location === 'object' ? body.location : null;
+        if (!loc) {
+            throw new ValidationError('Location must be an object');
+        }
+        const toStr = (v) => (v != null ? String(v).trim() : '');
+        const formattedAddress = toStr(loc.formattedAddress || loc.address);
+
+        // Optional geo coords for server-side distance filtering.
+        const lat = toFiniteNumber(loc.latitude);
+        const lng = toFiniteNumber(loc.longitude);
+
+        if (lat === null || lng === null) {
+            throw new ValidationError('Invalid address coordinates');
+        }
+
+        // Strict Geofencing Validation: Check if address is within the zone
+        const targetZoneId = pendingProfileUpdates.zoneId || update.zoneId || currentRestaurant.zoneId;
+        if (!targetZoneId) {
+            throw new ValidationError('Zone is required');
+        }
+
+        const zone = await FoodZone.findById(targetZoneId).lean();
+        if (!zone || !Array.isArray(zone.coordinates) || zone.coordinates.length < 3) {
+            throw new ValidationError('Invalid zone configuration');
+        }
+
+        if (!isPointInPolygon(lat, lng, zone.coordinates)) {
+            throw new ValidationError('Selected address is outside the selected zone');
+        }
+
+        pendingProfileUpdates.location = {
+            type: 'Point',
+            coordinates: lat !== null && lng !== null ? [lng, lat] : undefined,
+            latitude: lat ?? undefined,
+            longitude: lng ?? undefined,
+            formattedAddress,
+            address: formattedAddress,
+            addressLine1: toStr(loc.addressLine1),
+            addressLine2: toStr(loc.addressLine2),
+            area: toStr(loc.area),
+            city: toStr(loc.city),
+            state: toStr(loc.state),
+            pincode: toStr(loc.pincode),
+            landmark: toStr(loc.landmark)
+        };
+        pendingProfileUpdates.addressLine1 = toStr(loc.addressLine1);
+        pendingProfileUpdates.addressLine2 = toStr(loc.addressLine2);
+        pendingProfileUpdates.area = toStr(loc.area);
+        pendingProfileUpdates.city = toStr(loc.city);
+        pendingProfileUpdates.state = toStr(loc.state);
+        pendingProfileUpdates.pincode = toStr(loc.pincode);
+        pendingProfileUpdates.landmark = toStr(loc.landmark);
+    }
+
+    if (body.openingTime !== undefined) {
+        update.openingTime = normalizeRestaurantTime(body.openingTime) || '';
+    }
+    if (body.closingTime !== undefined) {
+        update.closingTime = normalizeRestaurantTime(body.closingTime) || '';
+    }
+    if (body.openDays !== undefined) {
+        if (!Array.isArray(body.openDays)) {
+            throw new ValidationError('openDays must be an array');
+        }
+        update.openDays = body.openDays
+            .map((day) => String(day || '').trim())
+            .filter(Boolean)
+            .slice(0, 7);
+    }
+    if (body.estimatedDeliveryTime !== undefined) {
+        const estimatedDeliveryTimeText = String(body.estimatedDeliveryTime || '').trim();
+        update.estimatedDeliveryTime = estimatedDeliveryTimeText;
+        update.estimatedDeliveryTimeMinutes = parseEstimatedDeliveryMinutes(estimatedDeliveryTimeText) ?? undefined;
+    }
+
+    const openingMinutes = body.openingTime !== undefined ? timeToMinutes(update.openingTime) : null;
+    const closingMinutes = body.closingTime !== undefined ? timeToMinutes(update.closingTime) : null;
+    if (openingMinutes !== null && closingMinutes !== null) {
+        if (openingMinutes === closingMinutes) {
+            throw new ValidationError('Opening time and closing time cannot be same');
+        }
+        if (closingMinutes < openingMinutes) {
+            throw new ValidationError('Closing time cannot be less than opening time');
+        }
+    }
+
+    if (body.menuImages !== undefined) {
+        if (!Array.isArray(body.menuImages)) {
+            throw new ValidationError('menuImages must be an array');
+        }
+        const urls = body.menuImages
+            .map((m) => toUrl(m))
+            .filter(Boolean)
+            .slice(0, 20);
+        update.menuImages = urls;
+    }
+
+    if (body.coverImages !== undefined) {
+        if (!Array.isArray(body.coverImages)) {
+            throw new ValidationError('coverImages must be an array');
+        }
+        const urls = body.coverImages
+            .map((m) => toUrl(m))
+            .filter(Boolean)
+            .slice(0, 20);
+        update.coverImages = urls;
+    }
+
+    if (body.profileImage !== undefined) {
+        update.profileImage = toUrl(body.profileImage) || '';
+    }
+
+    // Legal & compliance fields require admin approval.
+    const queueLegalField = (key, value) => {
+        const currentRaw = currentRestaurant[key];
+        const current = currentRaw == null
+            ? ''
+            : (currentRaw instanceof Date
+                ? currentRaw.toISOString().slice(0, 10)
+                : (typeof currentRaw === 'object' && currentRaw.url)
+                    ? String(currentRaw.url)
+                    : String(currentRaw));
+        const next = value == null
+            ? ''
+            : (value instanceof Date
+                ? value.toISOString().slice(0, 10)
+                : String(value));
+        if (current !== next) pendingProfileUpdates[key] = value;
+    };
+
+    if (body.panNumber !== undefined) {
+        queueLegalField('panNumber', String(body.panNumber || '').trim().toUpperCase());
+    }
+    if (body.nameOnPan !== undefined) {
+        queueLegalField('nameOnPan', String(body.nameOnPan || '').trim());
+    }
+    if (body.panImage !== undefined) {
+        queueLegalField('panImage', toUrl(body.panImage) || '');
+    }
+    if (body.gstRegistered !== undefined) {
+        let nextGstRegistered = null;
+        if (typeof body.gstRegistered === 'boolean') {
+            nextGstRegistered = body.gstRegistered;
+        } else if (typeof body.gstRegistered === 'string') {
+            const normalized = body.gstRegistered.trim().toLowerCase();
+            if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
+                nextGstRegistered = true;
+            } else if (normalized === 'false' || normalized === '0' || normalized === 'no') {
+                nextGstRegistered = false;
+            } else {
+                throw new ValidationError('gstRegistered must be a boolean');
+            }
+        } else {
+            throw new ValidationError('gstRegistered must be a boolean');
+        }
+        if (nextGstRegistered !== Boolean(currentRestaurant.gstRegistered)) {
+            pendingProfileUpdates.gstRegistered = nextGstRegistered;
+        }
+    }
+    if (body.gstNumber !== undefined) {
+        queueLegalField('gstNumber', String(body.gstNumber || '').trim().toUpperCase());
+    }
+    if (body.gstLegalName !== undefined) {
+        queueLegalField('gstLegalName', String(body.gstLegalName || '').trim());
+    }
+    if (body.gstAddress !== undefined) {
+        queueLegalField('gstAddress', String(body.gstAddress || '').trim());
+    }
+    if (body.gstImage !== undefined) {
+        queueLegalField('gstImage', toUrl(body.gstImage) || '');
+    }
+
+    // FSSAI changes queue for outlet approval (no logout / status flip).
+    if (body.fssaiNumber !== undefined) {
+        queueLegalField('fssaiNumber', String(body.fssaiNumber || '').trim());
+    }
+    if (body.fssaiExpiry !== undefined) {
+        const rawExpiry = String(body.fssaiExpiry || '').trim();
+        if (!rawExpiry) {
+            queueLegalField('fssaiExpiry', null);
+        } else {
+            const parsedExpiry = new Date(rawExpiry);
+            if (Number.isNaN(parsedExpiry.getTime())) {
+                throw new ValidationError('FSSAI expiry date is invalid');
+            }
+            queueLegalField('fssaiExpiry', parsedExpiry);
+        }
+    }
+    if (body.fssaiImage !== undefined) {
+        queueLegalField('fssaiImage', toUrl(body.fssaiImage) || '');
+    }
+
+    if (body.reVerification !== undefined) {
+        update.reVerification = {
+            isZoneUpdate: body.reVerification.isZoneUpdate === true,
+            previousAddress: String(body.reVerification.previousAddress || '').trim(),
+            previousLocation: {
+                latitude: toFiniteNumber(body.reVerification.previousLocation?.latitude),
+                longitude: toFiniteNumber(body.reVerification.previousLocation?.longitude)
+            },
+            previousZoneId: body.reVerification.previousZoneId && mongoose.Types.ObjectId.isValid(body.reVerification.previousZoneId)
+                ? new mongoose.Types.ObjectId(body.reVerification.previousZoneId)
+                : undefined,
+            previousZone: String(body.reVerification.previousZone || '').trim(),
+            updatedZone: String(body.reVerification.updatedZone || '').trim(),
+            reVerificationReason: String(body.reVerification.reVerificationReason || 'Zone Update').trim()
+        };
+    }
+
+
+    if (Object.keys(pendingProfileUpdates).length > 0) {
+        update.pendingUpdates = {
+            ...(currentRestaurant.pendingUpdates || {}),
+            ...pendingProfileUpdates
+        };
+        update.pendingUpdateStatus = 'pending';
+        update.pendingUpdateRequestedAt = new Date();
+        update.pendingUpdateReason = '';
+    }
+
+    const enforcePureVegVisibility = update._enforcePureVegVisibility;
+    delete update._enforcePureVegVisibility;
+
+    if (!Object.keys(update).length) {
+        return getCurrentRestaurantProfile(restaurantId);
+    }
+
+    if (body.reVerification !== undefined) {
+        update.status = 'pending';
+    }
+
+    const shouldClearApprovalMeta = body.reVerification !== undefined;
+
+    try {
+        const updateOps = { $set: update };
+        if (shouldClearApprovalMeta) {
+            updateOps.$unset = {
+                approvedAt: 1,
+                rejectedAt: 1,
+                rejectionReason: 1,
+                ...LEGACY_RESTAURANT_PHONE_UNSET,
+            };
+        } else if (update.ownerPhone !== undefined || update.primaryContactNumber !== undefined) {
+            updateOps.$unset = { ...LEGACY_RESTAURANT_PHONE_UNSET };
+        }
+
+        const doc = await FoodRestaurant.findByIdAndUpdate(
+            restaurantId,
+            updateOps,
+            {
+                new: true,
+                runValidators: true,
+                projection: [
+                    'restaurantId',
+                    'restaurantName',
+                    'cuisines',
+                    'location',
+                    'addressLine1',
+                    'addressLine2',
+                    'area',
+                    'city',
+                    'state',
+                    'pincode',
+                    'landmark',
+                    'ownerName',
+                    'ownerEmail',
+                    'ownerPhone',
+                    'primaryContactNumber',
+                    'pureVegRestaurant',
+                    'profileImage',
+                    'coverImages',
+                    'menuImages',
+                    'openingTime',
+                    'closingTime',
+                    'openDays',
+                    'status',
+                    'createdAt',
+                    'updatedAt',
+                    'panNumber',
+                    'nameOnPan',
+                    'panImage',
+                    'gstRegistered',
+                    'gstNumber',
+                    'gstLegalName',
+                    'gstAddress',
+                    'gstImage',
+                    'fssaiNumber',
+                    'fssaiExpiry',
+                    'fssaiImage',
+                    'accountNumber',
+                    'ifscCode',
+                    'accountHolderName',
+                    'accountType',
+                    'upiId',
+                    'upiQrImage',
+                    'estimatedDeliveryTime',
+                    'estimatedDeliveryTimeMinutes',
+                    'zoneId',
+                    'reVerification',
+                    'pendingUpdateStatus',
+                    'pendingUpdateReason',
+                    'pendingUpdateRequestedAt',
+                    'pendingUpdates'
+                ].join(' ')
+            }
+        ).lean();
+
+        if (typeof enforcePureVegVisibility === 'boolean') {
+            try {
+                const { enforcePureVegMenuVisibility } = await import('../../admin/services/foodApproval.service.js');
+                await enforcePureVegMenuVisibility(restaurantId, enforcePureVegVisibility);
+            } catch (e) {
+                console.error('Failed to enforce pure-veg menu visibility:', e);
+            }
+        }
+
+        if (Object.keys(pendingProfileUpdates).length > 0) {
+            const restaurantNameForNotification =
+                update.restaurantName || currentRestaurant.restaurantName || doc?.restaurantName;
+            void notifyAdminsAboutRestaurantProfileReview(restaurantId, restaurantNameForNotification);
+        } else if (body.reVerification !== undefined) {
+            void notifyAdminsAboutRestaurantProfileReview(
+                restaurantId,
+                update.restaurantName || currentRestaurant.restaurantName || doc?.restaurantName
+            );
+        }
+
+        return toRestaurantProfile(doc);
+    } catch (err) {
+        if (err && err.code === 11000) {
+            throw new ValidationError(
+                'Phone number is already registered with another restaurant',
+                'PHONE_EXISTS'
+            );
+        }
+        throw err;
+    }
+};
+
+export const uploadRestaurantProfileImage = async (restaurantId, file) => {
+    if (!restaurantId) throw new ValidationError('Invalid restaurant id');
+    if (!file?.buffer) throw new ValidationError('Image file is required');
+
+    const currentRestaurant = await FoodRestaurant.findById(restaurantId)
+        .select('restaurantName status')
+        .lean();
+    if (!currentRestaurant) throw new ValidationError('Restaurant not found');
+
+    const doc = await FoodRestaurant.findByIdAndUpdate(
+        restaurantId,
+        {
+            $set: {
+                profileImage: url,
+                status: 'pending'
+            },
+            $unset: {
+                approvedAt: 1,
+                rejectedAt: 1,
+                rejectionReason: 1
+            }
+        },
+        { new: true, projection: 'restaurantId profileImage coverImages restaurantName cuisines location menuImages addressLine1 addressLine2 area city state pincode landmark ownerName ownerEmail ownerPhone primaryContactNumber pureVegRestaurant openingTime closingTime openDays status createdAt updatedAt' }
+    ).lean();
+
+    if (!doc) throw new ValidationError('Restaurant not found');
+
+    if (currentRestaurant.status !== 'pending') {
+        void notifyAdminsAboutRestaurantProfileReview(restaurantId, currentRestaurant.restaurantName || doc.restaurantName);
+    }
+
+    return { profileImage: { url } };
+};
+
+export const uploadRestaurantMenuImage = async (file) => {
+    if (!file?.buffer) throw new ValidationError('Image file is required');
+    const url = await uploadImageBuffer(file.buffer, 'food/restaurants/menu');
+    return { menuImage: { url, publicId: null } };
+};
+
+export const uploadRestaurantCoverImages = async (restaurantId, files = []) => {
+    if (!restaurantId) throw new ValidationError('Invalid restaurant id');
+    if (!Array.isArray(files) || files.length === 0) {
+        throw new ValidationError('At least one image file is required');
+    }
+
+    const validFiles = files.filter((file) => file?.buffer);
+    if (validFiles.length === 0) {
+        throw new ValidationError('At least one valid image file is required');
+    }
+
+    const currentRestaurant = await FoodRestaurant.findById(restaurantId)
+        .select('restaurantName status profileImage coverImages')
+        .lean();
+    if (!currentRestaurant) throw new ValidationError('Restaurant not found');
+
+    const uploadedUrls = await Promise.all(
+        validFiles.slice(0, 20).map((file) => uploadImageBuffer(file.buffer, 'food/restaurants/cover'))
+    );
+    const existingCoverImages = Array.isArray(currentRestaurant.coverImages)
+        ? currentRestaurant.coverImages.map((image) => toUrl(image)).filter(Boolean)
+        : [];
+    const nextCoverImages = [...existingCoverImages];
+
+    uploadedUrls.forEach((url) => {
+        if (!nextCoverImages.includes(url)) nextCoverImages.push(url);
+    });
+
+    const update = {
+        coverImages: nextCoverImages.slice(0, 20),
+        status: 'pending'
+    };
+
+    if (!toUrl(currentRestaurant.profileImage) && uploadedUrls[0]) {
+        update.profileImage = uploadedUrls[0];
+    }
+
+    await FoodRestaurant.findByIdAndUpdate(
+        restaurantId,
+        {
+            $set: update,
+            $unset: {
+                approvedAt: 1,
+                rejectedAt: 1,
+                rejectionReason: 1
+            }
+        },
+        { new: true }
+    ).lean();
+
+    if (currentRestaurant.status !== 'pending') {
+        void notifyAdminsAboutRestaurantProfileReview(restaurantId, currentRestaurant.restaurantName || '');
+    }
+
+    return {
+        coverImages: uploadedUrls.map((url) => ({ url, publicId: null })),
+        profileImage: update.profileImage ? { url: update.profileImage } : undefined
+    };
+};
+
+export const uploadRestaurantMenuImages = async (restaurantId, files = []) => {
+    if (!restaurantId) throw new ValidationError('Invalid restaurant id');
+    if (!Array.isArray(files) || files.length === 0) {
+        throw new ValidationError('At least one image file is required');
+    }
+
+    const validFiles = files.filter((file) => file?.buffer);
+    if (validFiles.length === 0) {
+        throw new ValidationError('At least one valid image file is required');
+    }
+
+    const currentRestaurant = await FoodRestaurant.findById(restaurantId)
+        .select('restaurantName status menuImages')
+        .lean();
+    if (!currentRestaurant) throw new ValidationError('Restaurant not found');
+
+    const uploadedUrls = await Promise.all(
+        validFiles.slice(0, 20).map((file) => uploadImageBuffer(file.buffer, 'food/restaurants/menu'))
+    );
+    const existingMenuImages = Array.isArray(currentRestaurant.menuImages)
+        ? currentRestaurant.menuImages.map((image) => toUrl(image)).filter(Boolean)
+        : [];
+    const nextMenuImages = [...existingMenuImages];
+
+    uploadedUrls.forEach((url) => {
+        if (!nextMenuImages.includes(url)) nextMenuImages.push(url);
+    });
+
+    await FoodRestaurant.findByIdAndUpdate(
+        restaurantId,
+        {
+            $set: {
+                menuImages: nextMenuImages.slice(0, 20),
+                status: 'pending'
+            },
+            $unset: {
+                approvedAt: 1,
+                rejectedAt: 1,
+                rejectionReason: 1
+            }
+        },
+        { new: true }
+    ).lean();
+
+    if (currentRestaurant.status !== 'pending') {
+        void notifyAdminsAboutRestaurantProfileReview(restaurantId, currentRestaurant.restaurantName || '');
+    }
+
+    return {
+        menuImages: uploadedUrls.map((url) => ({ url, publicId: null }))
+    };
+};
+
+export const listApprovedRestaurants = async (query = {}) => {
+    const limit = Math.min(Math.max(parseInt(query.limit, 10) || 100, 1), 1000);
+    const page = Math.max(parseInt(query.page, 10) || 1, 1);
+    const skip = (page - 1) * limit;
+
+    const filter = { status: 'approved' };
+
+    if (query.city && String(query.city).trim()) {
+        const city = String(query.city).trim().slice(0, 80);
+        const rx = { $regex: escapeRegex(city), $options: 'i' };
+        filter.$and = [...(filter.$and || []), { $or: [{ 'location.city': rx }, { city: rx }] }];
+    }
+    if (query.area && String(query.area).trim()) {
+        const area = String(query.area).trim().slice(0, 80);
+        const rx = { $regex: escapeRegex(area), $options: 'i' };
+        filter.$and = [...(filter.$and || []), { $or: [{ 'location.area': rx }, { area: rx }] }];
+    }
+    if (query.cuisine && String(query.cuisine).trim()) {
+        const cuisine = normalizeCuisine(query.cuisine);
+        // cuisines is an array of strings.
+        filter.cuisines = { $in: [new RegExp(escapeRegex(cuisine), 'i')] };
+    }
+    if (query.hasOffers === 'true') {
+        filter.offer = { $exists: true, $ne: null, $ne: '' };
+    }
+    const minRating = toFiniteNumber(query.minRating);
+    if (minRating !== null) {
+        filter.rating = { $gte: Math.max(0, Math.min(5, minRating)) };
+    }
+    const maxDeliveryTime = toFiniteNumber(query.maxDeliveryTime);
+    if (maxDeliveryTime !== null) {
+        filter.estimatedDeliveryTimeMinutes = { $lte: Math.max(0, Math.round(maxDeliveryTime)) };
+    }
+    const maxPrice = toFiniteNumber(query.maxPrice);
+    if (maxPrice !== null) {
+        filter.featuredPrice = { $lte: Math.max(0, maxPrice) };
+    }
+    if (query.topRated === 'true') {
+        filter.rating = { ...(filter.rating || {}), $gte: 4.5 };
+    }
+    if (query.trusted === 'true') {
+        filter.totalRatings = { ...(filter.totalRatings || {}), $gte: 100 };
+    }
+    if (query.search && String(query.search).trim()) {
+        const raw = String(query.search).trim().slice(0, 80);
+        const term = escapeRegex(raw);
+        if (term.length >= 2) {
+            filter.$or = [
+                { restaurantName: { $regex: term, $options: 'i' } },
+                { area: { $regex: term, $options: 'i' } },
+                { city: { $regex: term, $options: 'i' } },
+                { 'location.area': { $regex: term, $options: 'i' } },
+                { 'location.city': { $regex: term, $options: 'i' } },
+                { cuisines: { $in: [new RegExp(term, 'i')] } }
+            ];
+        }
+    }
+
+    // Optional zone polygon filter (when restaurant.zoneId is not set yet).
+    const zoneFilter = await buildZoneRestaurantFilter(query.zoneId);
+    if (zoneFilter) {
+        filter.$and = [...(filter.$and || []), zoneFilter];
+    }
+
+    const lat = toFiniteNumber(query.lat);
+    const lng = toFiniteNumber(query.lng);
+    // Accept both radiusKm (preferred) and maxDistance (legacy frontend param).
+    const radiusKm = toFiniteNumber(query.radiusKm) ?? toFiniteNumber(query.maxDistance);
+    const sortBy = parseSortBy(query.sortBy);
+
+    // Card/list projection: only what the user app actually renders. Deliberately excludes
+    // internal-only flags (isVisibleToUsers / showRestaurantToUsersWithoutItems /
+    // hasHadActiveItems / status — used for server-side filtering, not shown to users) and the
+    // full location address block. The card only needs coordinates for distance/map, so we
+    // project just those sub-fields instead of the whole `location` object (which also carries
+    // formattedAddress / address / addressLine1-2 / landmark / pincode / state). Full details
+    // remain available from the by-id detail endpoint.
+    const projection = {
+        restaurantId: 1,
+        restaurantName: 1,
+        area: 1,
+        city: 1,
+        cuisines: 1,
+        profileImage: 1,
+        coverImages: 1,
+        menuImages: 1,
+        estimatedDeliveryTime: 1,
+        estimatedDeliveryTimeMinutes: 1,
+        offer: 1,
+        featuredDish: 1,
+        featuredPrice: 1,
+        rating: 1,
+        totalRatings: 1,
+        isAcceptingOrders: 1,
+        pureVegRestaurant: 1,
+        createdAt: 1,
+        'location.type': 1,
+        'location.coordinates': 1,
+        'location.latitude': 1,
+        'location.longitude': 1,
+        openingTime: 1,
+        closingTime: 1,
+        openDays: 1
+    };
+
+    // Use $geoNear only when geo is explicitly needed (radius filter or nearest sorting).
+    // This avoids accidentally hiding restaurants that do not have coordinates yet.
+    const wantsGeo = (radiusKm !== null) || sortBy === 'nearest';
+    if (lat !== null && lng !== null && wantsGeo) {
+        const geoNear = {
+            $geoNear: {
+                near: { type: 'Point', coordinates: [lng, lat] },
+                distanceField: 'distanceMeters',
+                spherical: true,
+                query: filter
+            }
+        };
+        if (radiusKm !== null) {
+            geoNear.$geoNear.maxDistance = Math.max(0.1, radiusKm) * 1000;
+        }
+
+        const sortStage = (() => {
+            if (sortBy === 'rating' || sortBy === 'rating-high') return { $sort: { rating: -1, distanceMeters: 1 } };
+            if (sortBy === 'rating-low') return { $sort: { rating: 1, distanceMeters: 1 } };
+            if (sortBy === 'price-low') return { $sort: { featuredPrice: 1, distanceMeters: 1 } };
+            if (sortBy === 'price-high') return { $sort: { featuredPrice: -1, distanceMeters: 1 } };
+            if (sortBy === 'newest') return { $sort: { createdAt: -1 } };
+            if (sortBy === 'deliveryTime') return { $sort: { estimatedDeliveryTimeMinutes: 1, distanceMeters: 1 } };
+            // nearest (default)
+            return { $sort: { distanceMeters: 1 } };
+        })();
+
+        const basePipeline = [
+            geoNear,
+            ...activeItemLookupStages(),
+            {
+                $addFields: {
+                    distanceInKm: { $round: [{ $divide: ['$distanceMeters', 1000] }, 2] }
+                }
+            },
+            sortStage
+        ];
+
+        const [pageDocs, totalDocs] = await Promise.all([
+            FoodRestaurant.aggregate([
+                ...basePipeline,
+                { $project: projection },
+                { $skip: skip },
+                { $limit: limit }
+            ]),
+            FoodRestaurant.aggregate([...basePipeline, { $count: 'count' }])
+        ]);
+
+        const total = totalDocs?.[0]?.count || 0;
+        await attachOutletTimingsToRestaurants(pageDocs);
+        return { restaurants: pageDocs, total, page, limit };
+    }
+
+    // Non-geo path: normal query + sort.
+    const sort = (() => {
+        if (sortBy === 'rating' || sortBy === 'rating-high') return { rating: -1, createdAt: -1 };
+        if (sortBy === 'rating-low') return { rating: 1, createdAt: -1 };
+        if (sortBy === 'price-low') return { featuredPrice: 1, createdAt: -1 };
+        if (sortBy === 'price-high') return { featuredPrice: -1, createdAt: -1 };
+        if (sortBy === 'deliveryTime') return { estimatedDeliveryTimeMinutes: 1, createdAt: -1 };
+        return { createdAt: -1 };
+    })();
+
+    const aggregateBasePipeline = [
+        { $match: filter },
+        ...activeItemLookupStages(),
+        { $sort: sort }
+    ];
+
+    const [restaurantsRaw, totalDocs] = await Promise.all([
+        FoodRestaurant.aggregate([
+            ...aggregateBasePipeline,
+            { $project: projection },
+            { $skip: skip },
+            { $limit: limit }
+        ]),
+        FoodRestaurant.aggregate([
+            ...aggregateBasePipeline,
+            { $count: 'count' }
+        ])
+    ]);
+
+    const total = totalDocs?.[0]?.count || 0;
+
+    const restaurants = (restaurantsRaw || []).map((r) => ({
+        ...r,
+        // Frontend user app expects `name` and often checks `profileImage.url`
+        restaurantId: r._id,
+        id: r._id,
+        name: r.restaurantName || '',
+        rating: normalizeRatingValue(r.rating),
+        totalRatings: normalizeTotalRatingsValue(r.totalRatings),
+        profileImage: r.profileImage ? { url: r.profileImage } : null,
+        coverImages: Array.isArray(r.coverImages) ? r.coverImages : [],
+        openingTime: r.openingTime || null,
+        closingTime: r.closingTime || null,
+        openDays: Array.isArray(r.openDays) ? r.openDays : [],
+        // Keep menuImages as an array for fallbacks; allow both string and {url} on client.
+        menuImages: Array.isArray(r.menuImages) ? r.menuImages : []
+    }));
+
+    await attachOutletTimingsToRestaurants(restaurants);
+
+    return { restaurants, total, page, limit };
+};
+
+export const getApprovedRestaurantByIdOrSlug = async (idOrSlug) => {
+    const value = String(idOrSlug || '').trim();
+    if (!value) return null;
+
+    // ObjectId path
+    if (/^[0-9a-fA-F]{24}$/.test(value)) {
+        const doc = await FoodRestaurant.findOne({ _id: value, status: 'approved' }).lean();
+        if (!doc) return null;
+        if (!(await ensurePublicRestaurantVisible(doc))) return null;
+        return {
+            ...doc,
+            rating: normalizeRatingValue(doc.rating),
+            totalRatings: normalizeTotalRatingsValue(doc.totalRatings)
+        };
+    }
+
+    // Public restaurant code path, e.g. REST000003
+    if (/^REST\d{6}$/i.test(value)) {
+        const doc = await FoodRestaurant.findOne({
+            restaurantId: value.toUpperCase(),
+            status: 'approved',
+        }).lean();
+        if (!doc) return null;
+        if (!(await ensurePublicRestaurantVisible(doc))) return null;
+        return {
+            ...doc,
+            rating: normalizeRatingValue(doc.rating),
+            totalRatings: normalizeTotalRatingsValue(doc.totalRatings)
+        };
+    }
+
+    // Slug path: use normalized field for index-friendly exact match.
+    const restaurantNameNormalized = normalizeName(value);
+    if (!restaurantNameNormalized) return null;
+
+    const doc = await FoodRestaurant.findOne({
+        status: 'approved',
+        restaurantNameNormalized
+    }).lean();
+    if (!doc) return null;
+    if (!(await ensurePublicRestaurantVisible(doc))) return null;
+    return {
+        ...doc,
+        rating: normalizeRatingValue(doc.rating),
+        totalRatings: normalizeTotalRatingsValue(doc.totalRatings)
+    };
+};
+
+export const listPublicOffers = async (query = {}) => {
+    const now = new Date();
+    const filter = {
+        status: 'active',
+        $and: [
+            { $or: [{ startDate: { $exists: false } }, { startDate: null }, { startDate: { $lte: now } }] },
+            { $or: [{ endDate: { $exists: false } }, { endDate: null }, { endDate: { $gt: now } }] }
+        ]
+    };
+
+    const list = await FoodOffer.find(filter)
+        .sort({ createdAt: -1 })
+        .populate({ path: 'restaurantId', select: 'restaurantName restaurantNameNormalized profileImage estimatedDeliveryTime rating' })
+        .lean();
+
+    const allOffers = list.map((o) => {
+        const restaurant = o.restaurantId && typeof o.restaurantId === 'object' ? o.restaurantId : null;
+        const restaurantSlug = restaurant?.restaurantNameNormalized || undefined;
+        const restaurantName =
+            o.restaurantScope === 'selected'
+                ? (restaurant?.restaurantName || 'Selected Restaurant')
+                : 'All Restaurants';
+
+        const title =
+            o.discountType === 'percentage'
+                ? `${Number(o.discountValue) || 0}% OFF`
+                : `Flat ₹${Number(o.discountValue) || 0} OFF`;
+
+        return {
+            id: String(o._id),
+            offerId: String(o._id),
+            couponCode: o.couponCode,
+            title,
+            discountType: o.discountType,
+            discountValue: o.discountValue,
+            maxDiscount: o.maxDiscount ?? null,
+            customerScope: o.customerScope,
+            restaurantScope: o.restaurantScope,
+            restaurantId: restaurant?._id ? String(restaurant._id) : (o.restaurantScope === 'selected' ? String(o.restaurantId) : null),
+            restaurantName,
+            restaurantSlug,
+            restaurantImage: restaurant?.profileImage || null,
+            deliveryTime: restaurant?.estimatedDeliveryTime || null,
+            restaurantRating: typeof restaurant?.rating === 'number' ? restaurant.rating : 0,
+            endDate: o.endDate || null,
+            showInCart: o.showInCart !== false,
+            minOrderValue: o.minOrderValue ?? 0,
+            freeDelivery: Boolean(o.freeDelivery)
+        };
+    });
+
+    // Also fetch approved, active, and non-expired restaurant-specific coupons
+    let restaurantCouponsMapped = [];
+    try {
+        const { RestaurantCoupon } = await import('../../admin/models/restaurantCoupon.model.js');
+        // RestaurantCoupon uses approvalStatus + startDate/endDate (not seller-coupon status/expiryDate).
+        const couponFilter = {
+            approvalStatus: 'approved',
+            startDate: { $lte: now },
+            endDate: { $gt: now },
+        };
+
+        if (query?.restaurantId) {
+            const rIdStr = String(query.restaurantId).trim();
+            if (mongoose.Types.ObjectId.isValid(rIdStr)) {
+                couponFilter.restaurantId = new mongoose.Types.ObjectId(rIdStr);
+            } else {
+                const rest = await FoodRestaurant.findOne({ restaurantId: rIdStr }).select('_id').lean();
+                if (rest) {
+                    couponFilter.restaurantId = rest._id;
+                } else {
+                    couponFilter.restaurantId = new mongoose.Types.ObjectId(); // force empty results
+                }
+            }
+        }
+
+        const dbCoupons = await RestaurantCoupon.find(couponFilter).sort({ createdAt: -1 }).lean();
+
+        // Resolve custom restaurantIds so cart can match either Mongo _id or public REST###### id
+        const restIds = [...new Set(dbCoupons.map(c => String(c.restaurantId)))];
+        const restDocs = await FoodRestaurant.find({ _id: { $in: restIds } }).select('_id restaurantId').lean();
+        const customIdMap = new Map(restDocs.map(r => [String(r._id), r.restaurantId]));
+
+        restaurantCouponsMapped = dbCoupons
+            .filter((c) => {
+                const usageLimit = Number(c.usageLimit);
+                if (!Number.isFinite(usageLimit) || usageLimit <= 0) return true;
+                return Number(c.usedCount || 0) < usageLimit;
+            })
+            .map((c) => {
+            const title = c.discountType === 'percentage'
+                ? `${Number(c.discountValue) || 0}% OFF`
+                : `Flat ₹${Number(c.discountValue) || 0} OFF`;
+            const mongoRestaurantId = String(c.restaurantId);
+            const publicRestaurantId = customIdMap.get(mongoRestaurantId) || null;
+
+            return {
+                id: String(c._id),
+                offerId: String(c._id),
+                couponCode: c.couponCode,
+                title,
+                discountType: c.discountType,
+                discountValue: c.discountValue,
+                maxDiscount: c.maxDiscount != null ? Number(c.maxDiscount) : null,
+                customerScope: 'all',
+                restaurantScope: 'selected',
+                // Prefer Mongo _id so cart restaurantData._id matching works; also expose public id.
+                restaurantId: mongoRestaurantId,
+                restaurantMongoId: mongoRestaurantId,
+                restaurantPublicId: publicRestaurantId,
+                restaurantName: c.restaurantName || 'Selected Restaurant',
+                restaurantSlug: undefined,
+                restaurantImage: null,
+                deliveryTime: null,
+                restaurantRating: 0,
+                startDate: c.startDate || null,
+                endDate: c.endDate || null,
+                showInCart: true,
+                minOrderValue: c.minOrderAmount ?? 0,
+                usageLimit: c.usageLimit ?? null,
+                usedCount: c.usedCount ?? 0,
+                freeDelivery: Boolean(c.freeDelivery)
+            };
+        });
+    } catch (err) {
+        console.error("Error fetching restaurant coupons in listPublicOffers:", err);
+    }
+
+    return { allOffers: [...allOffers, ...restaurantCouponsMapped], groupedByOffer: {} };
+};
+
+/**
+ * Delete a restaurant account and its associated data.
+ */
+export const deleteRestaurantAccount = async (restaurantId) => {
+    if (!restaurantId) {
+        throw new ValidationError('Invalid restaurant id');
+    }
+
+    const restaurant = await FoodRestaurant.findById(restaurantId);
+    if (!restaurant) {
+        throw new ValidationError('Restaurant not found');
+    }
+
+    const restaurantName = restaurant.restaurantName;
+
+    // Soft delete profile details
+    restaurant.isDeleted = true;
+    restaurant.accountStatus = 'deleted';
+    restaurant.isActive = false;
+    restaurant.isAcceptingOrders = false;
+    await restaurant.save();
+
+    // Purge/invalidate all active refresh tokens for this restaurant
+    const { FoodRefreshToken } = await import('../../../../core/refreshTokens/refreshToken.model.js');
+    await FoodRefreshToken.deleteMany({ userId: restaurantId });
+
+    // Notify admins about the deletion
+    try {
+        const { notifyAdminsSafely } = await import('../../../../core/notifications/firebase.service.js');
+        void notifyAdminsSafely({
+            title: 'Restaurant Account Deleted 🗑️',
+            body: `The restaurant "${restaurantName}" has soft deleted its account.`,
+            data: {
+                type: 'account_deleted',
+                subType: 'restaurant',
+                id: String(restaurantId)
+            }
+        });
+    } catch (e) {
+        console.error('Failed to notify admins of restaurant account deletion:', e);
+    }
+
+    return { success: true, message: 'Account soft deleted successfully' };
+};
+
+/**
+ * List complaints for a restaurant.
+ */
+export const getRestaurantComplaints = async (restaurantId, query = {}) => {
+    const { getRestaurantComplaints: getComplaintsInternal } = await import('../../admin/services/admin.service.js');
+    return getComplaintsInternal({ ...query, restaurantId });
+};
+

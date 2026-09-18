@@ -1,0 +1,19 @@
+/* Hide Google Maps chrome / attribution on taxi maps */
+.taxi-map-clean .gm-style-cc,
+.taxi-map-clean .gm-style-cc a,
+.taxi-map-clean .gm-style-cc div,
+.taxi-map-clean .gmnoprint,
+.taxi-map-clean .gm-bundled-control,
+.taxi-map-clean .gm-bundled-control-on-top,
+.taxi-map-clean .gm-fullscreen-control,
+.taxi-map-clean a[href^="https://maps.google.com/maps"],
+.taxi-map-clean a[href^="http://maps.google.com/maps"],
+.taxi-map-clean a[href*="maps.google.com"],
+.taxi-map-clean a[href*="google.com/maps"],
+.taxi-map-clean button[title="Toggle fullscreen view"],
+.taxi-map-clean .gm-style > div[style*="z-index: 1000000"],
+.taxi-map-clean .gm-style-mtc {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}

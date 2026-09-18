@@ -1,0 +1,1159 @@
+<title>Construction Module Schedule</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+  :root {
+    --paper:      #F1F4F7;
+    --surface:    #FFFFFF;
+    --surface-2:  #E7ECF1;
+    --ink:        #131C26;
+    --ink-2:      #35434F;
+    --muted:      #5A6875;
+    --faint:      #8494A1;
+    --rule:       #D2DAE2;
+    --rule-soft:  #E3E9EE;
+    --accent:     #0F6E8C;
+    --accent-ink: #0A5169;
+    --accent-wash:#DCEAF0;
+    --built:      #2E7D5B;
+    --built-wash: #DCEDE4;
+    --sched:      #7A6A2E;
+    --sched-wash: #EEE8D4;
+    --blocked:    #A6472F;
+    --blocked-wash:#F3DFD9;
+
+    --f-display: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+    --f-body:    'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --f-mono:    'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+    --maxw: 1100px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0E141A;
+      --surface:    #161F28;
+      --surface-2:  #1E2A35;
+      --ink:        #E8EEF3;
+      --ink-2:      #C3CFD9;
+      --muted:      #93A3B0;
+      --faint:      #6C7C89;
+      --rule:       #2B3945;
+      --rule-soft:  #222E39;
+      --accent:     #4FB3D4;
+      --accent-ink: #8FD2E8;
+      --accent-wash:#12313E;
+      --built:      #5CBF90;
+      --built-wash: #133024;
+      --sched:      #CBB264;
+      --sched-wash: #2E2814;
+      --blocked:    #E08265;
+      --blocked-wash:#38201A;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #0E141A;
+    --surface:    #161F28;
+    --surface-2:  #1E2A35;
+    --ink:        #E8EEF3;
+    --ink-2:      #C3CFD9;
+    --muted:      #93A3B0;
+    --faint:      #6C7C89;
+    --rule:       #2B3945;
+    --rule-soft:  #222E39;
+    --accent:     #4FB3D4;
+    --accent-ink: #8FD2E8;
+    --accent-wash:#12313E;
+    --built:      #5CBF90;
+    --built-wash: #133024;
+    --sched:      #CBB264;
+    --sched-wash: #2E2814;
+    --blocked:    #E08265;
+    --blocked-wash:#38201A;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 16px;
+    line-height: 1.6;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 0 24px 96px;
+  }
+
+  /* ---------- title block: a drawing sheet's identification panel ---------- */
+  .titleblock {
+    border: 1.5px solid var(--ink);
+    background: var(--surface);
+    margin: 40px 0 28px;
+  }
+  .tb-main {
+    padding: 30px 28px 26px;
+    border-bottom: 1.5px solid var(--ink);
+  }
+  .tb-eyebrow {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 14px;
+  }
+  h1 {
+    font-family: var(--f-display);
+    font-weight: 800;
+    font-size: clamp(30px, 5.2vw, 50px);
+    line-height: 1.02;
+    letter-spacing: -0.025em;
+    text-wrap: balance;
+    margin: 0 0 14px;
+  }
+  .tb-sub {
+    font-size: 16px;
+    color: var(--muted);
+    max-width: 62ch;
+    margin: 0;
+  }
+  .tb-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+  .tb-cell {
+    padding: 13px 18px;
+    border-right: 1px solid var(--rule);
+  }
+  .tb-cell:last-child { border-right: none; }
+  .tb-k {
+    font-family: var(--f-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--faint);
+    display: block;
+    margin-bottom: 3px;
+  }
+  .tb-v {
+    font-family: var(--f-mono);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-2);
+  }
+
+  /* ---------- metrics ---------- */
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin-bottom: 52px;
+  }
+  .metric {
+    background: var(--surface);
+    padding: 18px 18px 16px;
+  }
+  .metric-n {
+    font-family: var(--f-display);
+    font-weight: 700;
+    font-size: 34px;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    display: block;
+    margin-bottom: 6px;
+  }
+  .metric-l {
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+
+  /* ---------- sections ---------- */
+  section { margin-bottom: 60px; scroll-margin-top: 20px; }
+
+  .sec-head {
+    border-top: 1.5px solid var(--ink);
+    padding-top: 14px;
+    margin-bottom: 22px;
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .sec-no {
+    font-family: var(--f-mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.08em;
+  }
+  h2 {
+    font-family: var(--f-display);
+    font-weight: 700;
+    font-size: clamp(21px, 3vw, 27px);
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .sec-count {
+    font-family: var(--f-mono);
+    font-size: 12px;
+    color: var(--faint);
+    margin-left: auto;
+  }
+  .sec-intro {
+    color: var(--muted);
+    max-width: 66ch;
+    margin: 0 0 24px;
+    font-size: 15.5px;
+  }
+
+  h3 {
+    font-family: var(--f-mono);
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 30px 0 10px;
+    padding-bottom: 7px;
+    border-bottom: 1px solid var(--rule);
+  }
+  h3:first-of-type { margin-top: 0; }
+
+  /* ---------- feature schedule ---------- */
+  .sched-wrap { overflow-x: auto; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14.5px;
+    min-width: 620px;
+  }
+  thead th {
+    font-family: var(--f-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--faint);
+    text-align: left;
+    padding: 0 12px 8px 0;
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 13px 12px 13px 0;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: top;
+  }
+  tbody tr:last-child td { border-bottom: 1px solid var(--rule); }
+
+  .c-code {
+    font-family: var(--f-mono);
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--accent);
+    white-space: nowrap;
+    width: 52px;
+    padding-top: 15px;
+  }
+  .c-name {
+    font-weight: 600;
+    color: var(--ink);
+    width: 210px;
+    line-height: 1.35;
+  }
+  .c-name span {
+    display: block;
+    font-weight: 400;
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 4px;
+    line-height: 1.45;
+  }
+  .c-desc { color: var(--ink-2); line-height: 1.55; }
+  .c-desc em {
+    display: block;
+    font-style: normal;
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 5px;
+    padding-left: 11px;
+    border-left: 2px solid var(--rule);
+  }
+  .c-ph {
+    width: 96px;
+    white-space: nowrap;
+    padding-top: 14px;
+  }
+
+  .pill {
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    padding: 3px 7px;
+    border: 1px solid;
+    white-space: nowrap;
+    display: inline-block;
+  }
+  .p-sched  { color: var(--sched);   border-color: var(--sched);   background: var(--sched-wash); }
+  .p-built  { color: var(--built);   border-color: var(--built);   background: var(--built-wash); }
+  .p-block  { color: var(--blocked); border-color: var(--blocked); background: var(--blocked-wash); }
+  .p-accent { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-wash); }
+
+  /* ---------- ordered sequences (journey, money) ---------- */
+  .seq {
+    list-style: none;
+    counter-reset: step;
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--rule);
+  }
+  .seq li {
+    counter-increment: step;
+    display: grid;
+    grid-template-columns: 46px 1fr;
+    gap: 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--rule-soft);
+    align-items: start;
+  }
+  .seq li::before {
+    content: counter(step, decimal-leading-zero);
+    font-family: var(--f-mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--faint);
+    padding-top: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+  .seq strong {
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .seq p {
+    margin: 3px 0 0;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .seq li.pivot {
+    background: var(--accent-wash);
+    margin: 0 -14px;
+    padding: 12px 14px;
+    border-bottom-color: var(--rule);
+  }
+  .seq li.pivot::before { color: var(--accent); }
+
+  /* ---------- rule cards ---------- */
+  .rules {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+  }
+  .rule-card {
+    background: var(--surface);
+    padding: 18px 20px 20px;
+  }
+  .rule-n {
+    font-family: var(--f-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 7px;
+  }
+  .rule-card h4 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 16px;
+    letter-spacing: -0.01em;
+    margin: 0 0 7px;
+    line-height: 1.25;
+  }
+  .rule-card p {
+    margin: 0;
+    font-size: 14px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .rule-card .status {
+    margin-top: 11px;
+    display: block;
+  }
+
+  /* ---------- callout ---------- */
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--surface);
+    padding: 18px 22px;
+    margin: 24px 0;
+  }
+  .callout.warn { border-left-color: var(--blocked); }
+  .callout h4 {
+    font-family: var(--f-display);
+    font-weight: 700;
+    font-size: 15px;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+  .callout p { margin: 0 0 10px; font-size: 14.5px; color: var(--ink-2); line-height: 1.55; }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout code {
+    font-family: var(--f-mono);
+    font-size: 12.5px;
+    background: var(--surface-2);
+    padding: 1px 5px;
+    color: var(--ink);
+  }
+
+  footer {
+    border-top: 1.5px solid var(--ink);
+    padding-top: 18px;
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    color: var(--faint);
+    line-height: 1.7;
+  }
+
+  a { color: var(--accent); }
+  a:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  @media (max-width: 620px) {
+    .c-name { width: auto; }
+    .seq li { grid-template-columns: 34px 1fr; gap: 10px; }
+  }
+</style>
+
+<div class="wrap">
+
+  <!-- ============ TITLE BLOCK ============ -->
+  <div class="titleblock">
+    <div class="tb-main">
+      <p class="tb-eyebrow">SMS Pro Ecosystem · Module 01</p>
+      <h1>Construction Services<br>Feature Schedule</h1>
+      <p class="tb-sub">Every feature the construction module will deliver — 51 in total, across the customer, the contractor and your office team — with what each one does, why it matters, and which build phase delivers it.</p>
+    </div>
+    <div class="tb-grid">
+      <div class="tb-cell"><span class="tb-k">Source</span><span class="tb-v">BRD/FRD v1.0</span></div>
+      <div class="tb-cell"><span class="tb-k">Features</span><span class="tb-v">51</span></div>
+      <div class="tb-cell"><span class="tb-k">Foundation</span><span class="tb-v">Phase 0 built</span></div>
+      <div class="tb-cell"><span class="tb-k">Module flag</span><span class="tb-v">OFF</span></div>
+      <div class="tb-cell"><span class="tb-k">Revision</span><span class="tb-v">A · 22 Aug 2026</span></div>
+    </div>
+  </div>
+
+  <div class="metrics">
+    <div class="metric"><span class="metric-n">23</span><span class="metric-l">Customer<br>features</span></div>
+    <div class="metric"><span class="metric-n">18</span><span class="metric-l">Contractor<br>features</span></div>
+    <div class="metric"><span class="metric-n">10</span><span class="metric-l">Office<br>features</span></div>
+    <div class="metric"><span class="metric-n">18</span><span class="metric-l">New data<br>models</span></div>
+    <div class="metric"><span class="metric-n">9</span><span class="metric-l">Build<br>phases</span></div>
+    <div class="metric"><span class="metric-n">6</span><span class="metric-l">Open<br>questions</span></div>
+  </div>
+
+  <!-- ============ 01 JOURNEY ============ -->
+  <section id="journey">
+    <div class="sec-head">
+      <span class="sec-no">01</span>
+      <h2>The complete journey</h2>
+      <span class="sec-count">16 steps</span>
+    </div>
+    <p class="sec-intro">Every feature in this document is a detailed view of one of these steps. The order is real — each step depends on the one before it, which is why the schedule is numbered.</p>
+
+    <ol class="seq">
+      <li><strong>Customer logs in.</strong><p>Compulsory — construction is a protected service. No introduction screens; they land on their dashboard.</p></li>
+      <li><strong>They open Construction Services.</strong><p>A list of the kinds of work available, each with a short description of what it covers.</p></li>
+      <li><strong>They fill in an enquiry.</strong><p>What work, where the site is, roughly how big, what they can spend, when they want it done. Photographs can be attached.</p></li>
+      <li><strong>The system confirms it.</strong><p>A reference number goes back immediately, so nothing gets lost.</p></li>
+      <li><strong>Verified contractors are matched.</strong><p>By type of work, location and availability. The customer can inspect each profile.</p></li>
+      <li><strong>A site visit is arranged.</strong><p>The contractor sees the site, records measurements and conditions, takes photographs — in the app, not on paper.</p></li>
+      <li><strong>The contractor prepares a quote.</strong><p>An itemised list: each item of work, the quantity, the rate, the amount, plus terms and exclusions.</p></li>
+      <li><strong>The customer reviews it.</strong><p>Compares against other quotes, asks questions, requests changes.</p></li>
+      <li class="pivot"><strong>The customer accepts a quote.</strong><p>The turning point. The enquiry becomes a live project, and the agreed price and scope are locked.</p></li>
+      <li><strong>The work is divided into stages.</strong><p>Each with a description, a target date, and how much of the total it is worth.</p></li>
+      <li><strong>The customer funds the project.</strong><p>Money goes in and is held. The contractor can see it is real but cannot touch it.</p></li>
+      <li><strong>The contractor completes a stage.</strong><p>Dated photographs are uploaded as proof.</p></li>
+      <li><strong>The stage is approved.</strong><p>The customer — or a supervisor — confirms the work is genuinely done.</p></li>
+      <li class="pivot"><strong>That stage's payment is released.</strong><p>Automatically. Nobody has to chase anybody.</p></li>
+      <li><strong>Steps 12–14 repeat.</strong><p>Stage by stage, until the work is finished.</p></li>
+      <li><strong>The project is handed over.</strong><p>Final approval, final payment, all papers stored, and the customer rates the contractor.</p></li>
+    </ol>
+
+    <div class="callout">
+      <h4>Why steps 11 to 14 are the whole design</h4>
+      <p>The customer's money goes in before work starts, so the contractor knows it is real. But it is released only as each stage is genuinely completed and approved. The customer never pays for work not done; the contractor never works without knowing the money exists. That single mechanism is what makes the module trustworthy — everything else is built around it.</p>
+    </div>
+  </section>
+
+  <!-- ============ 02 CUSTOMER ============ -->
+  <section id="customer">
+    <div class="sec-head">
+      <span class="sec-no">02</span>
+      <h2>Features for the customer</h2>
+      <span class="sec-count">C1–C23 · 23 features</span>
+    </div>
+    <p class="sec-intro">A person or company who wants construction work done. They want a contractor they can trust, a fair price they can understand, and to know what is happening without chasing anybody.</p>
+
+    <h3>Finding and asking</h3>
+    <div class="sched-wrap">
+      <table>
+        <thead><tr><th>Ref</th><th>Feature</th><th>What it does</th><th>Phase</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="c-code">C1</td>
+            <td class="c-name">Construction services list</td>
+            <td class="c-desc">A clear list of the kinds of construction work available, organised into categories and sub-categories, each with a short description of what it includes.<em>Most customers do not know the correct term for what they want. Showing them the options is the difference between an enquiry and a closed app.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 2</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">C2</td>
+            <td class="c-name">Service detail page</td>
+            <td class="c-desc">What the service typically covers, roughly how long such work takes, what to expect, and examples of similar completed projects.<em>Sets expectations early and reduces disappointment later.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 2</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">C3</td>
+            <td class="c-name">Enquiry form</td>
+            <td class="c-desc">What work is needed, where the site is (picked on a map), the plot or built-up area, how many floors, current site condition, budget range, and when they want it done.<em>The more the contractor knows before visiting, the more accurate the eventual quote.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 4</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">C4</td>
+            <td class="c-name">Photos and drawings</td>
+            <td class="c-desc">Attach photographs of the existing site, any drawings the customer already has, and reference images of the result they want.<em>One photograph often communicates more than a page of description.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 4</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">C5</td>
+            <td class="c-name">Enquiry confirmation and tracking</td>
+            <td class="c-desc">An immediate confirmation with a reference number, and a screen showing the current status of every enquiry sent.<em>Silence after submitting a form makes people assume it failed.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 4</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Choosing a contractor</h3>
+    <div class="sched-wrap">
+      <table>
+        <thead><tr><th>Ref</th><th>Feature</th><th>What it does</th><th>Phase</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="c-code">C6</td>
+            <td class="c-name">Contractor list</td>
+            <td class="c-desc">The contractors matched to the enquiry, each showing rating, verification status, specialisation and how many similar projects they have completed.<em>Choice is the main reason a customer would use a platform rather than ask a relative.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 4</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">C7</td>
+            <td class="c-name">Contractor profile</td>
+            <td class="c-desc">A full page per contractor: verification badges, trust score, photographs of completed work, specialisations, and reviews from past customers.<em>This is where trust is actually created. Without it, every contractor looks identical.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 4</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">C8</td>
+            <td class="c-name">Search and filter</td>
+            <td class="c-desc">Narrow the list by type of work, distance, rating, verification level or availability.<em>Becomes essential as the contractor network grows.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 4</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Site visit and quotation</h3>
+    <div class="sched-wrap">
+      <table>
+        <thead><tr><th>Ref</th><th>Feature</th><th>What it does</th><th>Phase</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="c-code">C9</td>
+            <td class="c-name">Booking a site visit</td>
+            <td class="c-desc">Pick a convenient date and time, receive a confirmation and a reminder, and reschedule if something changes.<em>The site visit is where a rough enquiry becomes a real, quotable job.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 4</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">C10</td>
+            <td class="c-name">Receiving the quotation</td>
+            <td class="c-desc">The full itemised quote arrives in the app — every item of work, quantity, rate, amount, taxes, total, terms, exclusions, and how long the price is valid.<em>Replaces the number-over-the-phone with something the customer can study, save and refer back to.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 4</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">C11</td>
+            <td class="c-name">Comparing quotations</td>
+            <td class="c-desc">Where more than one contractor has quoted, the customer sees them side by side and compares on price, timeline and inclusions.<em>Comparing is genuinely hard on paper. Doing it well is a real reason to use the app.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 4</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">C12</td>
+            <td class="c-name">Questions and revisions</td>
+            <td class="c-desc">Ask about any item, or request a revised quote. Every version is kept, so both sides can see exactly what changed.<em>Negotiation happens in every construction deal. Keeping it inside the app keeps the record complete.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 4</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">C13</td>
+            <td class="c-name">Accepting or rejecting</td>
+            <td class="c-desc">Accepting turns the quote into a live project and locks the agreed price and scope. Rejecting asks for a brief reason, which improves future matching.<em>This is the moment a casual enquiry becomes real business.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 4</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Watching the work</h3>
+    <div class="sched-wrap">
+      <table>
+        <thead><tr><th>Ref</th><th>Feature</th><th>What it does</th><th>Phase</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="c-code">C14</td>
+            <td class="c-name">Project dashboard</td>
+            <td class="c-desc">One screen showing everything: which stage the work is at, how much is finished, what has been paid, what is coming next, and anything waiting for the customer's approval.<em>This screen alone delivers the customer-transparency goal. It is the screen they will open most often.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 5</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">C15</td>
+            <td class="c-name">Stage list and progress</td>
+            <td class="c-desc">All the stages in order, with each one's target date, current status and how much it is worth.<em>Turns a vague "it's going on" into something specific and checkable.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 5</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">C16</td>
+            <td class="c-name">Progress photo gallery</td>
+            <td class="c-desc">Every photograph the contractor has uploaded, arranged by date and stage, so the customer can watch the work grow over time.<em>For a customer living in another city, this is the whole product.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 5</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">C17</td>
+            <td class="c-name">Approving a stage</td>
+            <td class="c-desc">When a stage is submitted as complete, the customer reviews the evidence and approves it — which is what releases that stage's payment.<em>This puts the customer genuinely in control of their own money.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 5</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">C18</td>
+            <td class="c-name">Delay alerts</td>
+            <td class="c-desc">If a stage passes its target date, both sides are notified automatically.<em>Small delays get discussed early instead of becoming big arguments later.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 6</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Papers, messages and money</h3>
+    <div class="sched-wrap">
+      <table>
+        <thead><tr><th>Ref</th><th>Feature</th><th>What it does</th><th>Phase</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="c-code">C19</td>
+            <td class="c-name">Project documents</td>
+            <td class="c-desc">All project papers in one organised place — drawings, agreements, approvals, bills, warranty papers. Older versions are kept and clearly marked as superseded.<em>These papers are needed years later, for resale, insurance or repairs. Most people lose them.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 6</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">C20</td>
+            <td class="c-name">Messaging the contractor</td>
+            <td class="c-desc">A conversation attached to the project, where photos and documents can be shared. Everything is kept permanently.<em>Keeps important decisions inside the project record instead of scattered across personal messages.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 6</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">C21</td>
+            <td class="c-name">Payment schedule</td>
+            <td class="c-desc">A clear breakdown of the money: what has been paid, what is being held, what is due next and what remains.<em>Money confusion causes more disputes in construction than the work itself.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 5</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">C22</td>
+            <td class="c-name">Adding money to the project</td>
+            <td class="c-desc">The customer funds the project through the app's wallet using their normal payment method.<em>This is what gives the contractor confidence to begin work.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 5</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">C23</td>
+            <td class="c-name">Handover and rating</td>
+            <td class="c-desc">The customer confirms final handover, the last payment is released, and they rate the contractor. That rating feeds the contractor's public score.<em>Ratings are what raise the quality of the whole network over time.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 6</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 03 CONTRACTOR ============ -->
+  <section id="contractor">
+    <div class="sec-head">
+      <span class="sec-no">03</span>
+      <h2>Features for the contractor</h2>
+      <span class="sec-count">W1–W18 · 18 features</span>
+    </div>
+    <p class="sec-intro">An individual contractor or a construction firm. They want a steady flow of genuine customers, and to be paid on time without argument.</p>
+
+    <h3>Joining and getting approved</h3>
+    <div class="sched-wrap">
+      <table>
+        <thead><tr><th>Ref</th><th>Feature</th><th>What it does</th><th>Phase</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="c-code">W1</td>
+            <td class="c-name">Registration</td>
+            <td class="c-desc">The contractor registers with their business details — name, type of business, years of experience and where they operate.<em>The front door of the supply side. If it is difficult, contractors simply do not complete it.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 3</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">W2</td>
+            <td class="c-name">Declaring what they do</td>
+            <td class="c-desc">Which kinds of construction work they take on, the size of projects they handle, how far they will travel, and how many projects they can run at once.<em>Accurate matching depends entirely on this information being right.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 3</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">W3</td>
+            <td class="c-name">Uploading documents</td>
+            <td class="c-desc">Licences, registrations, tax documents and certificates. The system tracks expiry dates and warns before anything lapses.<em>This is the foundation of the entire trust promise to customers.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 3</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">W4</td>
+            <td class="c-name">Verification status</td>
+            <td class="c-desc">The contractor can see where their application stands, and what is still needed.<em>Waiting without information is the main reason applicants give up.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 3</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">W5</td>
+            <td class="c-name">Building a portfolio</td>
+            <td class="c-desc">Photographs and descriptions of completed work, shown on their public profile.<em>Good work is the contractor's best sales tool, and most have no way to show it.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 3</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Getting work</h3>
+    <div class="sched-wrap">
+      <table>
+        <thead><tr><th>Ref</th><th>Feature</th><th>What it does</th><th>Phase</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="c-code">W6</td>
+            <td class="c-name">Enquiry feed</td>
+            <td class="c-desc">New enquiries matching their skills and area, with the key details visible so they can judge whether it suits them.<em>A steady flow of genuine leads is the single biggest reason a contractor joins.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 4</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">W7</td>
+            <td class="c-name">Accepting or declining</td>
+            <td class="c-desc">The contractor takes on an enquiry or passes on it. Declining lets the enquiry move to someone else quickly.<em>A fast decline is far better for the customer than a slow non-answer.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 4</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Site visit and quoting</h3>
+    <div class="sched-wrap">
+      <table>
+        <thead><tr><th>Ref</th><th>Feature</th><th>What it does</th><th>Phase</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="c-code">W8</td>
+            <td class="c-name">Visit scheduling</td>
+            <td class="c-desc">Proposing and confirming a visit time, with reminders on both sides.<em>Missed visits waste a full day for both parties.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 4</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">W9</td>
+            <td class="c-name">Site visit form</td>
+            <td class="c-desc">A structured form filled in on site: measurements, site condition, access, water and electricity availability, and general observations — with photographs attached. The app records that the contractor was actually at the site.<em>This is what makes the quote accurate, and it protects both sides if conditions are disputed later.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 4</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">W10</td>
+            <td class="c-name">Quotation builder</td>
+            <td class="c-desc">Build the quote line by line — description, quantity, unit, rate, and the amount calculated automatically. Items group into sections such as civil, electrical and finishing.<em>The module's headline feature. It turns an informal estimate into a professional document.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 4</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">W11</td>
+            <td class="c-name">Terms and exclusions</td>
+            <td class="c-desc">Space to state clearly what is included, what is not, and the conditions attached.<em>Nearly every construction dispute begins with something the customer assumed was included.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 4</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">W12</td>
+            <td class="c-name">Proposing payment stages</td>
+            <td class="c-desc">The contractor sets out the stages and what percentage of the total each is worth, sent along with the quote.<em>Both sides agree the payment plan up front, before any work begins.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 4</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">W13</td>
+            <td class="c-name">Saved templates</td>
+            <td class="c-desc">Frequently used quotes can be saved and reused, so a similar job takes minutes rather than hours to quote.<em>Speed of quoting directly affects how many jobs a contractor wins.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 4</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Doing the work and getting paid</h3>
+    <div class="sched-wrap">
+      <table>
+        <thead><tr><th>Ref</th><th>Feature</th><th>What it does</th><th>Phase</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="c-code">W14</td>
+            <td class="c-name">Project workspace</td>
+            <td class="c-desc">All their live projects in one place, with each project's stages, pending actions and payment status.<em>Most contractors currently track several projects entirely in their head.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 5</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">W15</td>
+            <td class="c-name">Uploading progress</td>
+            <td class="c-desc">For each stage: how much is complete, notes, and dated photographs as proof.<em>This evidence is what unlocks the payment, so it is in the contractor's own interest.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 5</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">W16</td>
+            <td class="c-name">Submitting a stage</td>
+            <td class="c-desc">Marking a stage complete sends it for approval and notifies the customer.<em>Replaces the awkward phone call asking for money with a clean, neutral process.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 5</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">W17</td>
+            <td class="c-name">Earnings and settlements</td>
+            <td class="c-desc">What has been earned, what has been released, what is still held, and when money reached their bank account.<em>Clear, predictable payment information is what keeps good contractors on a platform.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 5</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">W18</td>
+            <td class="c-name">Trust score</td>
+            <td class="c-desc">A score built from completed work, customer ratings, complaint history, whether documents are current, and how quickly they respond.<em>Gives contractors a concrete reason to behave well, and customers something reliable to judge by.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 6</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 04 OFFICE ============ -->
+  <section id="office">
+    <div class="sec-head">
+      <span class="sec-no">04</span>
+      <h2>Features for your office team</h2>
+      <span class="sec-count">A1–A10 · 10 features</span>
+    </div>
+    <p class="sec-intro">SMS Pro Venture staff running the platform. They want control over quality, visibility of every project, and the ability to step in when something goes wrong.</p>
+
+    <div class="sched-wrap">
+      <table>
+        <thead><tr><th>Ref</th><th>Feature</th><th>What it does</th><th>Phase</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="c-code">A1</td>
+            <td class="c-name">Construction dashboard</td>
+            <td class="c-desc">The whole picture at a glance: enquiries received, live projects, total value, stages due, and anything needing attention.<em>The screen your operations team will keep open all day.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 7</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">A2</td>
+            <td class="c-name">Contractor approval queue</td>
+            <td class="c-desc">Pending applications with their documents, ready for your team to review and approve or reject with a reason.<em>This is where platform quality is actually decided.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 3</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">A3</td>
+            <td class="c-name">Contractor management</td>
+            <td class="c-desc">View any contractor's full record — documents, projects, ratings, complaints and score. Suspend or reactivate them when needed.<em>You need the ability to remove a contractor quickly if something goes seriously wrong.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 3</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">A4</td>
+            <td class="c-name">Enquiry pipeline</td>
+            <td class="c-desc">Every enquiry and where it has reached. Enquiries that have gone quiet are highlighted so someone can follow up.<em>Every lost enquiry is lost revenue, and most are lost through simple neglect.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 7</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">A5</td>
+            <td class="c-name">Project register</td>
+            <td class="c-desc">Every project on the platform, filterable by city, contractor, value, stage or status.<em>Essential the moment you are running more than a handful of projects.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 7</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">A6</td>
+            <td class="c-name">Stepping into a project</td>
+            <td class="c-desc">Put a project on hold, hold a payment, reassign the contractor, or close the project — with the reason recorded.<em>Being the neutral party in the middle only works if you can actually act.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 7</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">A7</td>
+            <td class="c-name">Payment control</td>
+            <td class="c-desc">Oversight of all held money and all releases, with the power to block or approve a release.<em>A necessary safeguard whenever the platform is holding customers' money.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 7</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">A8</td>
+            <td class="c-name">Managing the service list</td>
+            <td class="c-desc">Add, edit or remove the construction services on offer, and their descriptions, without needing a developer.<em>Your service list will change often. It should not require a software release.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 2</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">A9</td>
+            <td class="c-name">Reports</td>
+            <td class="c-desc">Enquiries, conversion rates, average project values, delays, contractor performance and revenue — by city and by period.<em>These numbers tell you which services and which cities are actually worth investing in.</em></td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 7</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">A10</td>
+            <td class="c-name">Full activity record</td>
+            <td class="c-desc">A permanent, unchangeable record of every action taken on every project by anyone, including your own staff.<em>Your protection in any dispute, and a requirement given that you are holding customer money.</em></td>
+            <td class="c-ph"><span class="pill p-built">BUILT · P0</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 05 MONEY ============ -->
+  <section id="money">
+    <div class="sec-head">
+      <span class="sec-no">05</span>
+      <h2>How money is handled</h2>
+      <span class="sec-count">7 steps · foundation built</span>
+    </div>
+    <p class="sec-intro">Where most of the module's value sits, and where mistakes would be most expensive. The mechanism below is already built and tested — it is the only part of the module that exists in code today.</p>
+
+    <ol class="seq">
+      <li><strong>The customer puts money into the app.</strong><p>It sits in their wallet, marked as reserved for this project.</p></li>
+      <li><strong>The money is held, not transferred.</strong><p>The contractor can see it is there and knows it is real, but cannot take it. It also cannot be spent on food, a taxi or anything else.</p></li>
+      <li><strong>The contractor completes a stage.</strong><p>Dated photographs are uploaded as proof.</p></li>
+      <li><strong>The stage is approved.</strong><p>By the customer, or by a supervisor, depending on the setting you choose.</p></li>
+      <li class="pivot"><strong>Only that stage's money is released.</strong><p>The rest stays held. This is the one transition that turns held money into someone else's money.</p></li>
+      <li><strong>This repeats stage by stage.</strong><p>Until the work is done.</p></li>
+      <li><strong>A final portion may be held back.</strong><p>For an agreed period after completion, in case defects appear.</p></li>
+    </ol>
+
+    <div class="callout">
+      <h4>What is already working</h4>
+      <p>An append-only escrow ledger backs every one of those steps. A hold never moves money — it marks part of the balance as spoken for, and the shared payment path across all six existing modules now refuses to spend it. Every release carries a stable reference, so a retried or double-tapped approval pays the contractor exactly once.</p>
+      <p>Three guarantees hold at all times: <code>held = released + refunded + outstanding</code>; no release without an approved stage; and no ledger row can ever be edited or deleted — corrections are new entries, and the original stays visible forever.</p>
+    </div>
+  </section>
+
+  <!-- ============ 06 RULES ============ -->
+  <section id="rules">
+    <div class="sec-head">
+      <span class="sec-no">06</span>
+      <h2>The rules the business has set</h2>
+      <span class="sec-count">6 platform rules</span>
+    </div>
+    <p class="sec-intro">These come from the main platform blueprint and are already agreed. They apply to construction whether or not construction is mentioned by name, and they shape what the module can and cannot do.</p>
+
+    <div class="rules">
+      <div class="rule-card">
+        <span class="rule-n">Rule 01</span>
+        <h4>One account for everything</h4>
+        <p>A person has exactly one account across the whole app. A contractor who is also a customer uses one account for both.</p>
+        <span class="status"><span class="pill p-built">ALREADY TRUE</span></span>
+      </div>
+      <div class="rule-card">
+        <span class="rule-n">Rule 02</span>
+        <h4>All money goes through the app's wallet</h4>
+        <p>Every rupee moves through one central wallet system. Construction cannot build its own separate payment arrangement.</p>
+        <span class="status"><span class="pill p-built">BUILT · P0</span></span>
+      </div>
+      <div class="rule-card">
+        <span class="rule-n">Rule 03</span>
+        <h4>Financial records can never be changed</h4>
+        <p>To correct a mistake, a new correcting entry is added — the original stays visible forever. The escrow ledger enforces this absolutely; wallet balances remain a reconciled cache.</p>
+        <span class="status"><span class="pill p-built">BUILT · P0</span></span>
+      </div>
+      <div class="rule-card">
+        <span class="rule-n">Rule 04</span>
+        <h4>Every important action is recorded</h4>
+        <p>When a quote is sent, a stage approved, or money released, the system records who did it, when, and what changed. These records cannot be edited or deleted.</p>
+        <span class="status"><span class="pill p-built">BUILT · P0</span></span>
+      </div>
+      <div class="rule-card">
+        <span class="rule-n">Rule 05</span>
+        <h4>Construction is a protected service</h4>
+        <p>The user must be logged in and verified before they can use anything at all. Construction involves large sums and access to people's homes — anonymous use is not acceptable.</p>
+        <span class="status"><span class="pill p-sched">PHASE 2</span></span>
+      </div>
+      <div class="rule-card">
+        <span class="rule-n">Rule 06</span>
+        <h4>Contractors verified before receiving work</h4>
+        <p>A contractor cannot receive a single enquiry until your team has checked their documents. The system tracks expiry dates and warns when a licence is about to lapse.</p>
+        <span class="status"><span class="pill p-sched">PHASE 3</span></span>
+      </div>
+    </div>
+
+    <div class="callout warn">
+      <h4>One rule in the BRD does not match the code</h4>
+      <p>The BRD warns that a contractor accepting a six-month project would be locked out of all other work for six months, and calls this a blocking question. The code does not do this. The existing rule limits a provider's <em>catalogue</em> to one category; it does not trigger on job acceptance, and approved providers can change their selection at any time. No provider is ever blocked by an in-flight job.</p>
+      <p>Contractors get their own profile type and are not subject to that rule at all. Instead they declare multiple trades and a maximum concurrent project count (W2), which is the honest version of the same idea. <strong>This question needs no platform change.</strong></p>
+    </div>
+  </section>
+
+  <!-- ============ 07 PHASES ============ -->
+  <section id="phases">
+    <div class="sec-head">
+      <span class="sec-no">07</span>
+      <h2>Build sequence</h2>
+      <span class="sec-count">9 phases</span>
+    </div>
+    <p class="sec-intro">Each phase ships independently. The module stays switched off until Phase 7 passes acceptance, so nothing reaches customers before it is ready.</p>
+
+    <div class="sched-wrap">
+      <table>
+        <thead><tr><th>Phase</th><th>Delivers</th><th>Gate</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="c-code">P0</td>
+            <td class="c-name">Core money<span>Escrow ledger, spend guard, audit log, contractor wallet</span></td>
+            <td class="c-desc">Full regression across all six live modules. Nothing else starts until this is green.</td>
+            <td class="c-ph"><span class="pill p-built">BUILT</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">P1</td>
+            <td class="c-name">Registries<span>Module flag, permissions, notifications, admin switcher</span></td>
+            <td class="c-desc">Existing modules unaffected.</td>
+            <td class="c-ph"><span class="pill p-sched">NEXT</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">P2</td>
+            <td class="c-name">Catalogue and settings<span>C1, C2, A8 · Rule 5</span></td>
+            <td class="c-desc">You can fill in the service list yourself — this is what unblocks the biggest open question.</td>
+            <td class="c-ph"><span class="pill p-sched">SCHEDULED</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">P3</td>
+            <td class="c-name">Contractor onboarding<span>W1–W5, A2, A3 · Rule 6</span></td>
+            <td class="c-desc">Contractors can register and be verified.</td>
+            <td class="c-ph"><span class="pill p-sched">SCHEDULED</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">P4</td>
+            <td class="c-name">Enquiry to quote<span>C3–C13, W6–W13</span></td>
+            <td class="c-desc">The pipeline works end to end without money.</td>
+            <td class="c-ph"><span class="pill p-sched">SCHEDULED</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">P5</td>
+            <td class="c-name">Project and escrow<span>C14–C17, C21, C22, W14–W17</span></td>
+            <td class="c-desc">The BRD's core mechanism. Heaviest test burden of any phase.</td>
+            <td class="c-ph"><span class="pill p-sched">SCHEDULED</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">P6</td>
+            <td class="c-name">Transparency<span>C18–C20, C23, W18, disputes</span></td>
+            <td class="c-desc">Documents, messaging, disputes, trust score, delay alerts.</td>
+            <td class="c-ph"><span class="pill p-sched">SCHEDULED</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">P7</td>
+            <td class="c-name">Admin and reports<span>A1, A4–A7, A9</span></td>
+            <td class="c-desc">Operations can run it.</td>
+            <td class="c-ph"><span class="pill p-sched">SCHEDULED</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">P8</td>
+            <td class="c-name">Enable<span>Acceptance matrix, then flag on</span></td>
+            <td class="c-desc">Held funds unspendable elsewhere; double-tap approval pays once; open projects still complete when the module is switched off.</td>
+            <td class="c-ph"><span class="pill p-sched">SCHEDULED</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 08 OPEN ============ -->
+  <section id="open">
+    <div class="sec-head">
+      <span class="sec-no">08</span>
+      <h2>Still needs your answer</h2>
+      <span class="sec-count">6 open</span>
+    </div>
+    <p class="sec-intro">The BRD raised twenty questions. Most are now settled by making them admin-configurable — the service list, the quotation format, the stage rules and the commission model all become settings you control rather than code we guess at. These six cannot be absorbed that way.</p>
+
+    <div class="sched-wrap">
+      <table>
+        <thead><tr><th>Ref</th><th>Question</th><th>Why configuration cannot absorb it</th><th>Needed by</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="c-code">Q4</td>
+            <td class="c-name">Does the customer choose the contractor, or does the app assign one?</td>
+            <td class="c-desc">Two different customer interfaces. Choosing needs browse, compare and decide screens; assigning needs an accept-or-reject screen. Our recommendation — the app shortlists, the customer chooses — is what the design assumes.</td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 4</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">Q8</td>
+            <td class="c-name">Confirm your legal position on holding customer money.</td>
+            <td class="c-desc">Not a code question. Holding customer funds in India carries regulatory obligations. We need written confirmation before the escrow layer goes live.</td>
+            <td class="c-ph"><span class="pill p-block">BLOCKING · P5</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">Q9</td>
+            <td class="c-name">Can contractors be firms with several staff logins?</td>
+            <td class="c-desc">The data model already carries project participants with separate permissions, but multi-login contractor organisations need their own access screens.</td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 3</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">Q10</td>
+            <td class="c-name">Can a main contractor bring in sub-contractors through the app?</td>
+            <td class="c-desc">This would turn the payment chain into a payment tree and materially changes the escrow design. It must be known before that layer is extended, not after.</td>
+            <td class="c-ph"><span class="pill p-block">ASK NOW</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">Q16</td>
+            <td class="c-name">What documents must the app store?</td>
+            <td class="c-desc">Shapes how the document vault is organised. Low risk, but needed before that section is built.</td>
+            <td class="c-ph"><span class="pill p-sched">PHASE 6</span></td>
+          </tr>
+          <tr>
+            <td class="c-code">Q18</td>
+            <td class="c-name">Should a finished project become an AMC customer automatically?</td>
+            <td class="c-desc">Cross-module integration with your Property Care module. An obvious source of repeat revenue, but it was never stated as a requirement.</td>
+            <td class="c-ph"><span class="pill p-accent">CONFIRM</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout warn">
+      <h4>Two of these are worth answering this week</h4>
+      <p><strong>Q8</strong> gates the entire payment model. The mechanism is built and tested, but it must not go live against real customer money without your written confirmation that you intend to hold funds and on what basis.</p>
+      <p><strong>Q10</strong> is cheap to answer now and expensive later. If sub-contractor payments are wanted, the escrow layer needs to branch rather than run in a straight line — and that is a foundation change, not a feature addition.</p>
+    </div>
+  </section>
+
+  <footer>
+    Construction Services · Module 01 of the SMS Pro Ecosystem<br>
+    51 features · 18 data models · 9 build phases · Phase 0 complete<br>
+    Derived from the Project Summary, BRD &amp; FRD v1.0 and the module architecture blueprint · Revision A
+  </footer>
+
+</div>

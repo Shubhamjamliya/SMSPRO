@@ -1,0 +1,598 @@
+import mongoose from 'mongoose';
+import { ValidationError, NotFoundError } from '../../../core/auth/errors.js';
+import { logger } from '../../../utils/logger.js';
+import { assertMongoConnected } from '../../../config/db.js';
+import { SellerReturn } from '../seller/models/sellerReturn.model.js';
+import { Transaction } from '../../../core/payments/models/transaction.model.js';
+import { QuickOrder } from '../models/order.model.js';
+import { loadReturnPickupContext, resolveReturnPickupCharge } from '../utils/returnPickup.helpers.js';
+import {
+  REFUND_STATUSES,
+  RETURN_STATUSES,
+  extractPayoutDetailsFromReturn,
+  sanitizeRefundAuditMetadata,
+  serializeReturnForAdmin,
+} from '../utils/return.helpers.js';
+import { processQuickCommerceReturnRefund, syncParentOrderRefundFromReturn } from './quickRefund.service.js';
+import { syncOrderReturnMirrors } from './returnMirror.service.js';
+import { appendCumulativeReturnItems } from '../utils/returnRefundCalculation.helpers.js';
+import {
+  LEDGER_TYPES,
+  deductOrderPaymentBeforeSettlement,
+  getSellerUnsettledCreditSummary,
+  getSellersWithNegativeBalance,
+  getPendingReturnRecoveries,
+  getReturnRecoverySummary,
+  recordSellerLedgerEntry,
+  reconcileSellerLedgerBalance,
+} from './sellerLedger.service.js';
+
+const num = (value) => Number(value || 0);
+
+export const buildReturnRefundReference = (returnDoc) => {
+  const returnId = String(returnDoc?._id || '');
+  const method = String(returnDoc?.refundMethod || 'unknown').toLowerCase();
+  return `QC-RET-${returnId.slice(-8).toUpperCase()}-${method}`;
+};
+
+export const appendReturnRefundAudit = (returnDoc, entry) => {
+  if (!returnDoc) return returnDoc;
+  if (!Array.isArray(returnDoc.refundAuditLog)) returnDoc.refundAuditLog = [];
+  returnDoc.refundAuditLog.push({
+    at: new Date(),
+    action: entry?.action || '',
+    refundStatus: entry?.refundStatus || returnDoc.refundStatus || REFUND_STATUSES.NONE,
+    refundMethod: entry?.refundMethod || returnDoc.refundMethod || '',
+    amount: num(entry?.amount ?? returnDoc.returnRefundAmount),
+    refundTransactionId: entry?.refundTransactionId || returnDoc.refundTransactionId || '',
+    refundReference: entry?.refundReference || returnDoc.refundReference || '',
+    actorId: entry?.actorId && mongoose.Types.ObjectId.isValid(entry.actorId) ? entry.actorId : undefined,
+    actorRole: entry?.actorRole || 'SYSTEM',
+    note: entry?.note || '',
+    metadata: sanitizeRefundAuditMetadata(entry?.metadata || {}),
+  });
+  return returnDoc;
+};
+
+const resolveReturnPickupFee = async (returnDoc) => {
+  const stored = resolveReturnPickupCharge(returnDoc);
+  if (stored > 0) return stored;
+
+  const ctx = await loadReturnPickupContext(returnDoc);
+  return resolveReturnPickupCharge({
+    ...returnDoc?.toObject?.() || returnDoc,
+    calculatedPickupCharge: ctx.calculatedPickupCharge,
+    riderEarning: ctx.riderEarning,
+  });
+};
+
+export const applyReturnSellerFinance = async (
+  returnDoc,
+  { actorId = null, actorRole = 'SYSTEM', reason = 'Return seller finance adjustment' } = {},
+) => {
+  if (!returnDoc) throw new ValidationError('Return document is required');
+
+  if (returnDoc?.finance?.sellerLedgerApplied) {
+    return {
+      alreadyApplied: true,
+      finance: returnDoc.finance,
+    };
+  }
+
+  const sellerId = returnDoc.sellerId;
+  const orderId = String(returnDoc.orderId || '');
+  const returnId = returnDoc._id;
+  const refundAmount = num(returnDoc.returnRefundAmount);
+  if (refundAmount < 0) {
+    throw new ValidationError('Return refund amount cannot be negative');
+  }
+  const pickupFee = await resolveReturnPickupFee(returnDoc);
+
+  await reconcileSellerLedgerBalance(sellerId);
+
+  const summary = await getSellerUnsettledCreditSummary(sellerId);
+  let preSettlementDeducted = 0;
+  let postSettlementDebited = 0;
+  let settlementMode = '';
+
+  if (refundAmount > 0) {
+    const preSettlementAttempt = Math.min(refundAmount, summary.unwithdrawnCredits);
+    if (preSettlementAttempt > 0) {
+      const preResult = await deductOrderPaymentBeforeSettlement({
+        sellerId,
+        orderId,
+        returnId,
+        deductAmount: preSettlementAttempt,
+        actorId,
+        actorRole,
+        reason,
+      });
+      preSettlementDeducted = num(preResult.deducted);
+    }
+
+    const remaining = Math.max(0, refundAmount - preSettlementDeducted);
+    if (remaining > 0) {
+      const postResult = await recordSellerLedgerEntry({
+        sellerId,
+        type: LEDGER_TYPES.RETURN_REFUND,
+        amount: -remaining,
+        referenceId: `return_refund_post:${returnId}`,
+        orderId,
+        returnId,
+        reason: `${reason} (post-settlement recovery)`,
+        actorId,
+        actorRole,
+        status: 'Settled',
+        settlementState: 'settled',
+        metadata: { mode: 'post_settlement', refundAmount: remaining },
+      });
+      postSettlementDebited = Math.abs(num(postResult.entry?.amount));
+    }
+
+    if (preSettlementDeducted > 0 && postSettlementDebited > 0) settlementMode = 'mixed';
+    else if (preSettlementDeducted > 0) settlementMode = 'pre_settlement';
+    else if (postSettlementDebited > 0) settlementMode = 'post_settlement';
+  }
+
+  // Business rule: the return pickup/delivery-boy fee is an ADMIN expense.
+  // It is posted against the platform wallet when the rider completes the pickup
+  // (see recordAdminReturnPickupExpense in returnPickupDelivery.service.js) and is
+  // deliberately NOT debited from the seller. Historical seller-side
+  // RETURN_PICKUP_FEE entries are left untouched.
+  const pickupFeeDebited = 0;
+
+  const financeSnapshot = {
+    sellerLedgerApplied: true,
+    sellerLedgerAppliedAt: new Date(),
+    settlementMode,
+    preSettlementDeducted,
+    postSettlementDebited,
+    pickupFeeDebited,
+    pickupFeeFundedBy: 'ADMIN',
+    pickupFeeAdminExpense: pickupFee,
+  };
+
+  const persisted = await SellerReturn.findOneAndUpdate(
+    {
+      _id: returnId,
+      'finance.sellerLedgerApplied': { $ne: true },
+    },
+    { $set: { finance: financeSnapshot } },
+    { new: true },
+  );
+
+  if (!persisted) {
+    const current = await SellerReturn.findById(returnId).lean();
+    return {
+      alreadyApplied: true,
+      finance: current?.finance || financeSnapshot,
+      preSettlementDeducted,
+      postSettlementDebited,
+      pickupFeeDebited,
+    };
+  }
+
+  returnDoc.finance = persisted.finance;
+
+  // Seller-facing earnings read the mirrored deduction, so refresh it here.
+  await syncOrderReturnMirrors({ orderId });
+
+  logger.info(
+    `[ReturnFinance] Applied seller finance for return ${returnId}: pre=${preSettlementDeducted}, ` +
+      `post=${postSettlementDebited}, pickupFee=${pickupFee} (funded by ADMIN, seller not debited)`,
+  );
+
+  return {
+    alreadyApplied: false,
+    finance: returnDoc.finance,
+    preSettlementDeducted,
+    postSettlementDebited,
+    pickupFeeDebited,
+  };
+};
+
+export const executeReturnCustomerRefund = async (
+  returnDoc,
+  order,
+  { actorId = null, actorRole = 'ADMIN', note = '', payoutDetails = {} } = {},
+) => {
+  if (!returnDoc) throw new ValidationError('Return document is required');
+  if (!order) throw new NotFoundError('Parent order not found');
+
+  if (returnDoc.refundStatus === REFUND_STATUSES.COMPLETED && returnDoc.refundTransactionId) {
+    return {
+      alreadyProcessed: true,
+      processed: true,
+      pending: false,
+      refundResult: {
+        processed: true,
+        alreadyProcessed: true,
+        method: returnDoc.refundMethod,
+        amount: num(returnDoc.returnRefundAmount),
+        refundTransactionId: returnDoc.refundTransactionId,
+        refundReference: returnDoc.refundReference,
+      },
+    };
+  }
+
+  if (!returnDoc.refundReference) {
+    returnDoc.refundReference = buildReturnRefundReference(returnDoc);
+  }
+
+  if (returnDoc.refundStatus === REFUND_STATUSES.PROCESSING) {
+    const recoveryResult = await processQuickCommerceReturnRefund(returnDoc, order, { payoutDetails });
+    if (recoveryResult?.alreadyProcessed && recoveryResult?.processed) {
+      returnDoc.refundStatus = REFUND_STATUSES.COMPLETED;
+      returnDoc.refundTransactionId = recoveryResult.refundTransactionId || returnDoc.refundTransactionId;
+      returnDoc.returnStatus = RETURN_STATUSES.REFUND_COMPLETED;
+      appendCumulativeReturnItems(returnDoc, order);
+      appendReturnRefundAudit(returnDoc, {
+        action: 'REFUND_COMPLETED',
+        refundStatus: REFUND_STATUSES.COMPLETED,
+        refundTransactionId: returnDoc.refundTransactionId,
+        refundReference: returnDoc.refundReference,
+        actorId,
+        actorRole,
+        note: 'Recovered wallet refund after prior processing interruption',
+        metadata: { method: recoveryResult.method, amount: recoveryResult.amount },
+      });
+      await returnDoc.save();
+      await syncParentOrderRefundFromReturn(order, returnDoc);
+      await syncOrderReturnMirrors({ orderId: returnDoc.orderId });
+      return {
+        alreadyProcessed: true,
+        processed: true,
+        pending: false,
+        refundResult: recoveryResult,
+      };
+    }
+  }
+
+  const lockedReturn = await SellerReturn.findOneAndUpdate(
+    {
+      _id: returnDoc._id,
+      refundStatus: { $nin: [REFUND_STATUSES.COMPLETED, REFUND_STATUSES.PROCESSING] },
+    },
+    { $set: { refundStatus: REFUND_STATUSES.PROCESSING } },
+    { new: true },
+  );
+
+  if (!lockedReturn) {
+    const current = await SellerReturn.findById(returnDoc._id).lean();
+    if (current?.refundStatus === REFUND_STATUSES.COMPLETED) {
+      return {
+        alreadyProcessed: true,
+        processed: true,
+        pending: false,
+        refundResult: {
+          processed: true,
+          alreadyProcessed: true,
+          method: current.refundMethod,
+          amount: num(current.returnRefundAmount),
+          refundTransactionId: current.refundTransactionId,
+          refundReference: current.refundReference,
+        },
+      };
+    }
+    throw new ValidationError('Refund is already being processed for this return');
+  }
+
+  returnDoc.refundStatus = REFUND_STATUSES.PROCESSING;
+  appendReturnRefundAudit(returnDoc, {
+    action: 'REFUND_PROCESSING',
+    refundStatus: REFUND_STATUSES.PROCESSING,
+    actorId,
+    actorRole,
+    note: note || 'Refund processing started',
+  });
+  await returnDoc.save();
+
+  const refundResult = await processQuickCommerceReturnRefund(returnDoc, order, { payoutDetails });
+
+  if (refundResult?.pending) {
+    returnDoc.refundStatus = REFUND_STATUSES.PENDING;
+    returnDoc.refundTransactionId = refundResult.refundTransactionId || returnDoc.refundTransactionId;
+    appendReturnRefundAudit(returnDoc, {
+      action: 'REFUND_QUEUED',
+      refundStatus: REFUND_STATUSES.PENDING,
+      refundTransactionId: returnDoc.refundTransactionId,
+      refundReference: returnDoc.refundReference,
+      actorId,
+      actorRole,
+      note: refundResult.message || 'Refund queued for admin payout',
+      metadata: { payoutDetails },
+    });
+    await returnDoc.save();
+    await syncParentOrderRefundFromReturn(order, returnDoc);
+    await syncOrderReturnMirrors({ orderId: returnDoc.orderId });
+
+    return { alreadyProcessed: false, processed: false, pending: true, refundResult };
+  }
+
+  if (!refundResult?.processed) {
+    returnDoc.refundStatus = REFUND_STATUSES.FAILED;
+    appendReturnRefundAudit(returnDoc, {
+      action: 'REFUND_FAILED',
+      refundStatus: REFUND_STATUSES.FAILED,
+      actorId,
+      actorRole,
+      note: refundResult?.message || 'Refund failed',
+      metadata: { reason: refundResult?.reason || 'unknown' },
+    });
+    await returnDoc.save();
+    await syncParentOrderRefundFromReturn(order, returnDoc);
+    await syncOrderReturnMirrors({ orderId: returnDoc.orderId });
+    return { alreadyProcessed: false, processed: false, pending: false, refundResult };
+  }
+
+  returnDoc.refundStatus = REFUND_STATUSES.COMPLETED;
+  returnDoc.refundTransactionId = refundResult.refundTransactionId || returnDoc.refundTransactionId;
+  returnDoc.returnStatus = RETURN_STATUSES.REFUND_COMPLETED;
+  appendCumulativeReturnItems(returnDoc, order);
+  appendReturnRefundAudit(returnDoc, {
+    action: 'REFUND_COMPLETED',
+    refundStatus: REFUND_STATUSES.COMPLETED,
+    refundTransactionId: returnDoc.refundTransactionId,
+    refundReference: returnDoc.refundReference,
+    actorId,
+    actorRole,
+    note: refundResult.message || note || 'Refund completed',
+    metadata: { method: refundResult.method, amount: refundResult.amount },
+  });
+  await returnDoc.save();
+  await syncParentOrderRefundFromReturn(order, returnDoc);
+  await syncOrderReturnMirrors({ orderId: returnDoc.orderId });
+
+  return { alreadyProcessed: false, processed: true, pending: false, refundResult };
+};
+
+export const passReturnQualityCheckAndRefund = async ({
+  returnId,
+  actorId = null,
+  actorRole = 'SELLER',
+  notes = '',
+  force = false,
+}) => {
+  assertMongoConnected();
+
+  const returnDoc = await SellerReturn.findById(returnId);
+  if (!returnDoc) throw new NotFoundError('Return request not found');
+
+  if (returnDoc.qualityCheck?.status === 'passed' && returnDoc.refundStatus === REFUND_STATUSES.COMPLETED) {
+    return {
+      alreadyProcessed: true,
+      qualityPassed: true,
+      return: serializeReturnForAdmin(returnDoc.toObject()),
+    };
+  }
+
+  if (
+    returnDoc.qualityCheck?.status === 'passed' &&
+    returnDoc.refundStatus === REFUND_STATUSES.PENDING
+  ) {
+    return {
+      alreadyProcessed: true,
+      qualityPassed: true,
+      refundQueued: true,
+      return: serializeReturnForAdmin(returnDoc.toObject()),
+      message: 'Quality check already passed — refund is pending payout',
+    };
+  }
+
+  if (!force && returnDoc.returnStatus !== RETURN_STATUSES.RETURNED) {
+    throw new ValidationError('Quality check refund requires return status to be returned');
+  }
+
+  returnDoc.qualityCheck = {
+    ...(returnDoc.qualityCheck?.toObject?.() || returnDoc.qualityCheck || {}),
+    status: 'passed',
+    notes: String(notes || '').trim(),
+    checkedAt: new Date(),
+    checkedByRole: actorRole,
+    checkedById: actorId && mongoose.Types.ObjectId.isValid(actorId) ? actorId : null,
+  };
+  if (!returnDoc.refundReference) {
+    returnDoc.refundReference = buildReturnRefundReference(returnDoc);
+  }
+  await returnDoc.save();
+
+  const order = await QuickOrder.findOne({
+    orderId: returnDoc.orderId,
+    orderType: { $in: ['quick', 'mixed'] },
+  });
+  if (!order) throw new NotFoundError('Parent order not found');
+
+  const method = String(returnDoc.refundMethod || '').toLowerCase();
+  const payoutDetails = extractPayoutDetailsFromReturn(returnDoc);
+
+  const refundExecution = await executeReturnCustomerRefund(returnDoc, order, {
+    actorId,
+    actorRole,
+    note:
+      notes ||
+      (method === 'wallet'
+        ? 'Automatic wallet refund after quality pass'
+        : 'Refund queued after quality pass'),
+    payoutDetails,
+  });
+
+  if (refundExecution.processed && method === 'wallet') {
+    await applyReturnSellerFinance(returnDoc, {
+      actorId,
+      actorRole,
+      reason: 'Return wallet refund finance',
+    });
+  }
+
+  const fresh = await SellerReturn.findById(returnId).lean();
+  const serialized = serializeReturnForAdmin(fresh || returnDoc.toObject());
+
+  return {
+    qualityPassed: true,
+    autoRefundTriggered: method === 'wallet' && Boolean(refundExecution.processed),
+    refundQueued: Boolean(refundExecution.pending),
+    refund: refundExecution,
+    return: serialized,
+    message: refundExecution.pending
+      ? 'Quality check passed — refund is now pending payout'
+      : refundExecution.processed
+        ? 'Quality check passed and wallet refund completed'
+        : refundExecution.refundResult?.message || 'Quality check passed',
+  };
+};
+
+export const getPendingReturnCustomerPayouts = async ({ limit = 100 } = {}) => {
+  const items = await SellerReturn.find({
+    refundStatus: REFUND_STATUSES.PENDING,
+    refundMethod: { $in: ['upi', 'bank'] },
+    returnStatus: { $ne: RETURN_STATUSES.CANCELLED },
+  })
+    .sort({ updatedAt: -1 })
+    .limit(Math.min(500, Math.max(1, Number(limit) || 100)))
+    .lean();
+
+  return items.map((row) => ({
+    returnId: String(row._id),
+    orderId: row.orderId,
+    sellerId: String(row.sellerId || ''),
+    refundMethod: row.refundMethod,
+    refundStatus: row.refundStatus,
+    amount: num(row.returnRefundAmount),
+    refundTransactionId: row.refundTransactionId || '',
+    refundReference: row.refundReference || buildReturnRefundReference(row),
+    customer: row.customer || {},
+    updatedAt: row.updatedAt,
+  }));
+};
+
+/**
+ * Admin-funded return pickup fees paid to riders.
+ * Sourced from the platform wallet ledger written on pickup completion.
+ */
+export const getAdminReturnPickupExpenses = async ({ limit = 100 } = {}) => {
+  const match = { entityType: 'admin', type: 'debit', category: 'return_pickup_fee' };
+
+  const [rows, totals] = await Promise.all([
+    Transaction.find(match)
+      .sort({ createdAt: -1 })
+      .limit(Math.min(500, Math.max(1, Number(limit) || 100)))
+      .lean(),
+    Transaction.aggregate([
+      { $match: match },
+      { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
+    ]),
+  ]);
+
+  return {
+    totalPaid: num(totals?.[0]?.total),
+    count: Number(totals?.[0]?.count || 0),
+    entries: rows.map((row) => ({
+      transactionId: String(row._id),
+      returnId: row.metadata?.returnId || '',
+      orderId: row.metadata?.orderId || '',
+      sellerId: row.metadata?.sellerId || '',
+      riderId: row.metadata?.riderId || '',
+      amount: num(row.amount),
+      referenceId: row.metadata?.referenceId || '',
+      type: 'RETURN_PICKUP_FEE',
+      direction: 'DEBIT',
+      source: 'ADMIN',
+      status: row.status || 'completed',
+      createdAt: row.createdAt,
+    })),
+  };
+};
+
+export const getReturnFinanceReport = async () => {
+  assertMongoConnected();
+
+  const [
+    negativeBalanceSellers,
+    pendingRecoveries,
+    recoverySummary,
+    pendingPayouts,
+    adminPickupFeeExpenses,
+  ] = await Promise.all([
+    getSellersWithNegativeBalance(),
+    getPendingReturnRecoveries(),
+    getReturnRecoverySummary(),
+    getPendingReturnCustomerPayouts(),
+    getAdminReturnPickupExpenses({ limit: 100 }),
+  ]);
+
+  return {
+    negativeBalanceSellers,
+    pendingRecoveries,
+    pendingPayouts,
+    recoverySummary,
+    adminPickupFeeExpenses,
+    generatedAt: new Date(),
+  };
+};
+
+export const getSellerFinanceBalanceReport = async (sellerId) => {
+  const { getSellerWithdrawableBalance, getSellerLedgerEntries } = await import('./sellerLedger.service.js');
+  const [balance, ledger] = await Promise.all([
+    getSellerWithdrawableBalance(sellerId),
+    getSellerLedgerEntries({ sellerId, limit: 100 }),
+  ]);
+  return { balance, ledger };
+};
+
+export const confirmPendingReturnPayout = async ({
+  returnId,
+  actorId = null,
+  actorRole = 'ADMIN',
+  payoutReference = '',
+  note = '',
+}) => {
+  assertMongoConnected();
+
+  const returnDoc = await SellerReturn.findById(returnId);
+  if (!returnDoc) throw new NotFoundError('Return request not found');
+
+  if (returnDoc.refundStatus === REFUND_STATUSES.COMPLETED) {
+    const order = await QuickOrder.findOne({
+      orderId: returnDoc.orderId,
+      orderType: { $in: ['quick', 'mixed'] },
+    });
+    if (order) await syncParentOrderRefundFromReturn(order, returnDoc);
+    return { alreadyProcessed: true, return: returnDoc.toObject() };
+  }
+
+  if (returnDoc.refundStatus !== REFUND_STATUSES.PENDING) {
+    throw new ValidationError('Only pending UPI/Bank return refunds can be confirmed');
+  }
+
+  const order = await QuickOrder.findOne({
+    orderId: returnDoc.orderId,
+    orderType: { $in: ['quick', 'mixed'] },
+  });
+  if (!order) throw new NotFoundError('Parent order not found');
+
+  returnDoc.refundStatus = REFUND_STATUSES.COMPLETED;
+  returnDoc.returnStatus = RETURN_STATUSES.REFUND_COMPLETED;
+  appendCumulativeReturnItems(returnDoc, order);
+  if (payoutReference) returnDoc.refundReference = String(payoutReference).trim();
+  if (!returnDoc.refundReference) returnDoc.refundReference = buildReturnRefundReference(returnDoc);
+
+  appendReturnRefundAudit(returnDoc, {
+    action: 'REFUND_PAYOUT_CONFIRMED',
+    refundStatus: REFUND_STATUSES.COMPLETED,
+    refundReference: returnDoc.refundReference,
+    actorId,
+    actorRole,
+    note: note || 'Admin confirmed UPI/Bank payout',
+    metadata: { payoutReference },
+  });
+  await returnDoc.save();
+  await syncParentOrderRefundFromReturn(order, returnDoc);
+
+  await applyReturnSellerFinance(returnDoc, {
+    actorId,
+    actorRole,
+    reason: 'Return refund after admin payout confirmation',
+  });
+
+  return { alreadyProcessed: false, return: returnDoc.toObject() };
+};

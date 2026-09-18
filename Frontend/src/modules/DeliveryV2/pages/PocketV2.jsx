@@ -1,0 +1,455 @@
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  Wallet, IndianRupee, ArrowRight,
+  ShieldCheck, AlertTriangle, HelpCircle,
+  Receipt, FileText, LayoutGrid, X, ChevronRight,
+  Sparkles, Loader2, Gift
+} from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { useDeliveryStore } from '@/modules/DeliveryV2/store/useDeliveryStore';
+import { deliveryAPI } from '@food/api';
+import { toast } from 'sonner';
+import { formatCurrency } from '@food/utils/currency';
+import DepositPopup from '../components/DepositPopup';
+import WalletTopupPopup from '../components/WalletTopupPopup';
+import { getModuleShortLabel } from '@/modules/DeliveryV2/utils/driverModuleAccess';
+
+/**
+ * PocketV2 - 1:1 Match with Old PocketPage UI.
+ * Background: #f6e9dc
+ * Font: Poppins
+ */
+export const PocketV2 = () => {
+  const navigate = useNavigate();
+  const getAuthorizedModules = useDeliveryStore(state => state.getAuthorizedModules);
+  const activeModule = useDeliveryStore(state => state.activeModule);
+  const resolveActiveModule = useDeliveryStore(state => state.resolveActiveModule);
+  const availableModules = getAuthorizedModules();
+  const [activeModuleFilter, setActiveModuleFilter] = useState(
+    () => activeModule || resolveActiveModule() || 'all',
+  );
+
+  useEffect(() => {
+    const next = activeModule || resolveActiveModule();
+    if (next) setActiveModuleFilter(next);
+  }, [activeModule, resolveActiveModule]);
+  const [loading, setLoading] = useState(true);
+  const [walletState, setWalletState] = useState({
+    totalBalance: 0,
+    cashInHand: 0,
+    availableCashLimit: 0,
+    totalCashLimit: 0,
+    weeklyEarnings: 0,
+    weeklyOrders: 0,
+    payoutAmount: 0,
+    totalBonus: 0,
+    bankDetailsFilled: false,
+    minWalletToReceiveOrders: 0,
+    canReceiveOrders: true,
+    walletShortfall: 0,
+  });
+
+  const [activeOffer, setActiveOffer] = useState({
+    targetAmount: 0,
+    targetOrders: 0,
+    currentOrders: 0,
+    currentEarnings: 0,
+    validTill: '',
+    isLive: false
+  });
+
+  const [showDepositPopup, setShowDepositPopup] = useState(false);
+  const [showTopupPopup, setShowTopupPopup] = useState(false);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const [profileRes, earningsRes, walletRes] = await Promise.all([
+          deliveryAPI.getProfile(),
+          deliveryAPI.getEarnings({ 
+            period: 'all', 
+            ...(activeModuleFilter !== 'all' && { module: activeModuleFilter }) 
+          }),
+          deliveryAPI.getWallet()
+        ]);
+
+        const profile = profileRes?.data?.data?.profile || {};
+        const summary = earningsRes?.data?.data?.summary || {};
+        const wallet = walletRes?.data?.data?.wallet || {};
+        const activeAddonsRes = await deliveryAPI.getActiveEarningAddons().catch(() => null);
+        const activeOfferPayload =
+          activeAddonsRes?.data?.data?.activeOffer ||
+          activeAddonsRes?.data?.activeOffer ||
+          null;
+        
+        const bankDetails = profile?.documents?.bankDetails;
+        const isFilled = !!(bankDetails?.accountNumber);
+
+        setWalletState({
+          totalBalance: Number(wallet.pocketBalance) || 0,
+          cashInHand: Number(wallet.cashInHand) || 0,
+          availableCashLimit: Number(wallet.availableCashLimit) || 0,
+          totalCashLimit: Number(wallet.totalCashLimit) || 0,
+          weeklyEarnings: Number(summary.totalEarnings) || 0,
+          weeklyOrders: Number(summary.totalOrders) || 0,
+          payoutAmount: Number(wallet.lastPayout?.amount || wallet.totalWithdrawn || 0),
+          totalBonus: Number(wallet.totalBonus) || 0,
+          bankDetailsFilled: isFilled,
+          minWalletToReceiveOrders: Number(wallet.minWalletToReceiveOrders) || 0,
+          canReceiveOrders: wallet.canReceiveOrders !== false,
+          walletShortfall: Number(wallet.walletShortfall) || 0,
+        });
+
+        setActiveOffer({
+           targetAmount: Number(activeOfferPayload?.targetAmount) || 0,
+           targetOrders: Number(activeOfferPayload?.targetOrders) || 0,
+           currentOrders: Number(activeOfferPayload?.currentOrders) || 0,
+           currentEarnings: Number(activeOfferPayload?.currentEarnings) || 0,
+           validTill: activeOfferPayload?.validTill || '',
+           isLive: Boolean(activeOfferPayload)
+        });
+
+      } catch (err) {
+        toast.error('Failed to load wallet data');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [activeModuleFilter]);
+
+  const handleDepositSuccess = useCallback(() => {
+    setShowDepositPopup(false);
+    // Re-fetch wallet data after successful deposit
+    deliveryAPI.getWallet()
+      .then(res => {
+        const wallet = res?.data?.data?.wallet || {};
+        setWalletState(prev => ({
+          ...prev,
+          cashInHand: Number(wallet.cashInHand) || 0,
+          availableCashLimit: Number(wallet.availableCashLimit) || 0,
+          totalCashLimit: Number(wallet.totalCashLimit) || 0,
+          totalBalance: Number(wallet.pocketBalance) || 0,
+          minWalletToReceiveOrders: Number(wallet.minWalletToReceiveOrders) || 0,
+          canReceiveOrders: wallet.canReceiveOrders !== false,
+          walletShortfall: Number(wallet.walletShortfall) || 0,
+        }));
+      })
+      .catch(() => {});
+  }, []);
+
+  const ordersProgress = activeOffer.targetOrders > 0 ? Math.min(activeOffer.currentOrders / activeOffer.targetOrders, 1) : 0;
+  const earningsProgress = activeOffer.targetAmount > 0 ? Math.min(activeOffer.currentEarnings / activeOffer.targetAmount, 1) : 0;
+  const hasActiveOffer = activeOffer.isLive && (activeOffer.targetAmount > 0 || activeOffer.targetOrders > 0);
+
+  const formatOfferValidTill = (validTill) => {
+    if (!validTill) return '';
+    const parsed = new Date(validTill);
+    if (Number.isNaN(parsed.getTime())) return String(validTill);
+    return parsed.toLocaleDateString('en-US', { weekday: 'long' });
+  };
+
+
+
+  if (loading) return (
+    <div className="min-h-screen bg-[#f6e9dc] flex flex-col items-center justify-center font-poppins">
+       <div className="w-10 h-10 border-4 border-[#FF6A00] border-t-transparent rounded-full animate-spin mb-4" />
+       <p className="text-xs font-semibold text-gray-500">Loading Pocket...</p>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-[#f6e9dc] pb-32 font-poppins">
+       
+       {/* 0. Header */}
+       <div className="bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between sticky top-0 z-[100] safe-top">
+          <div className="flex items-center gap-4">
+             <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center text-[#FF6A00] border border-red-100">
+                <Wallet className="w-5 h-5" />
+             </div>
+             <div>
+                <h1 className="text-xl font-black text-gray-950 uppercase tracking-tighter">Pocket History</h1>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Earnings & Wallet Hub</p>
+             </div>
+          </div>
+       </div>
+       {/* 1. BANK DETAILS BANNER */}
+       {!walletState.bankDetailsFilled && (
+         <div className="bg-yellow-400 px-4 py-3 flex items-center gap-3 border-b border-yellow-500/20">
+            <div className="w-12 h-12 bg-black rounded-lg flex items-center justify-center text-white shrink-0 shadow-lg">
+               <FileText className="w-7 h-7" />
+            </div>
+            <div className="flex-1">
+               <h3 className="text-sm font-bold text-black mb-0.5">Submit bank details</h3>
+               <p className="text-xs text-black/80 font-medium">PAN & bank details required for payouts</p>
+            </div>
+            <button 
+              onClick={() => navigate('/food/delivery/profile/details')}
+              className="bg-yellow-300 text-black px-3 py-1.5 rounded-lg font-bold text-xs shadow-sm"
+            >
+               Submit
+            </button>
+         </div>
+       )}
+
+       <div className="px-4 py-6 bg-gray-100">
+          
+          {/* 1.5 MODULE FILTERS */}
+          {availableModules && availableModules.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto pb-4 no-scrollbar">
+              <button
+                onClick={() => setActiveModuleFilter('all')}
+                className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-all ${
+                  activeModuleFilter === 'all' 
+                    ? 'bg-black text-white shadow-md' 
+                    : 'bg-white text-gray-500 border border-gray-200'
+                }`}
+              >
+                All
+              </button>
+              {availableModules.map(mod => (
+                <button
+                  key={mod}
+                  onClick={() => setActiveModuleFilter(mod)}
+                  className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-all ${
+                    activeModuleFilter === mod 
+                      ? 'bg-black text-white shadow-md' 
+                      : 'bg-white text-gray-500 border border-gray-200'
+                  }`}
+                >
+                  {getModuleShortLabel(mod)}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* 2. POCKET BALANCE CARD */}
+          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 text-center mb-5">
+             <button
+               type="button"
+               onClick={() => navigate('/food/delivery/pocket/balance')}
+               className="w-full transition-all active:scale-[0.98]"
+             >
+               <p className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-2">Available Pocket Balance</p>
+               <h2 className="text-4xl font-black text-black tracking-tighter">
+                  ₹{walletState.totalBalance.toFixed(2)}
+               </h2>
+             </button>
+             {!walletState.canReceiveOrders && walletState.minWalletToReceiveOrders > 0 ? (
+               <p className="mt-3 text-[11px] font-semibold text-amber-700">
+                 Add ₹{walletState.walletShortfall.toFixed(0)} more to receive orders
+               </p>
+             ) : null}
+             <button
+               type="button"
+               onClick={() => setShowTopupPopup(true)}
+               className="mt-4 w-full rounded-xl bg-black py-3 text-sm font-bold text-white active:scale-[0.98]"
+             >
+               Deposit
+             </button>
+          </div>
+
+          {/* 3. EARNINGS GUARANTEE - API DRIVEN (NO STATIC VALUES) */}
+          {hasActiveOffer && (
+          <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-6">
+             <div className="bg-black p-4 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-black text-white leading-none mb-1">Earnings Guarantee</h3>
+                  <div className="flex items-center gap-2">
+                     <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Valid till {formatOfferValidTill(activeOffer.validTill)}</span>
+                     {activeOffer.isLive && (
+                       <div className="flex items-center gap-1.5">
+                          <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                          <span className="text-[10px] font-bold text-green-500 uppercase">Live</span>
+                       </div>
+                     )}
+                  </div>
+                </div>
+                <div className="bg-white/10 px-4 py-2 rounded-xl text-center border border-white/5">
+                   <p className="text-lg font-black text-white leading-none mb-0.5">₹{activeOffer.targetAmount}</p>
+                   <p className="text-[9px] font-bold text-gray-400 uppercase">{activeOffer.targetOrders} orders</p>
+                </div>
+             </div>
+
+             <div className="p-8 pb-10 flex items-center justify-around gap-8">
+                {/* Orders Circle */}
+                <div className="flex flex-col items-center">
+                   <div className="relative w-28 h-28">
+                      <svg className="w-28 h-28 transform -rotate-90" viewBox="0 0 100 100">
+                         <circle cx="50" cy="50" r="45" fill="none" stroke="#f3f4f6" strokeWidth="8" />
+                         <motion.circle 
+                            cx="50" cy="50" r="45" fill="none" stroke="#000" strokeWidth="8" strokeLinecap="round"
+                            initial={{ pathLength: 0 }} animate={{ pathLength: ordersProgress }} transition={{ duration: 1.5, ease: "easeOut" }}
+                         />
+                      </svg>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+                         <span className="text-xl font-black text-black leading-none">{activeOffer.currentOrders}</span>
+                         <span className="text-[9px] font-bold text-gray-400 uppercase mt-0.5">of {activeOffer.targetOrders}</span>
+                      </div>
+                   </div>
+                   <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mt-4">Orders Done</p>
+                </div>
+
+                {/* Earnings Circle */}
+                <div className="flex flex-col items-center">
+                   <div className="relative w-28 h-28">
+                      <svg className="w-28 h-28 transform -rotate-90" viewBox="0 0 100 100">
+                         <circle cx="50" cy="50" r="45" fill="none" stroke="#f3f4f6" strokeWidth="8" />
+                         <motion.circle 
+                            cx="50" cy="50" r="45" fill="none" stroke="#FF6A00" strokeWidth="8" strokeLinecap="round"
+                            initial={{ pathLength: 0 }} animate={{ pathLength: earningsProgress }} transition={{ duration: 1.5, ease: "easeOut" }}
+                         />
+                      </svg>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-2">
+                         <span className="text-base font-black text-black leading-none truncate">₹{activeOffer.currentEarnings}</span>
+                      </div>
+                   </div>
+                   <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mt-4">Earned Yet</p>
+                </div>
+             </div>
+          </div>
+          )}
+
+          {/* 4. POCKET ACTION BUTTONS */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-6">
+
+
+             <button 
+                onClick={() => navigate('/food/delivery/pocket/cash-limit')}
+                className="w-full p-5 border-b border-gray-50 flex items-center justify-between gap-3 active:bg-gray-50"
+             >
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                   <div className="w-12 h-12 shrink-0 bg-gray-50 rounded-xl flex items-center justify-center text-black border border-gray-100">
+                      <ShieldCheck className="w-6 h-6" />
+                   </div>
+                   <div className="min-w-0 text-left">
+                      <span className="block text-sm font-bold leading-snug text-gray-800">Available cash limit</span>
+                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">Spend Control</p>
+                   </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                   <span className="text-sm font-black tabular-nums text-black">₹{walletState.availableCashLimit.toFixed(2)}</span>
+                   <ChevronRight className="w-4 h-4 text-gray-300" />
+                </div>
+             </button>
+
+             <div className="p-5">
+                <button 
+                   onClick={() => setShowDepositPopup(true)}
+                   className="w-full py-4 bg-[#FF6A00] hover:bg-red-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-orange-500/20 active:scale-95 transition-all"
+                >
+                   Deposit Cash
+                </button>
+             </div>
+          </div>
+
+          {/* 5. MORE SERVICES - Vertical List */}
+          <div className="space-y-4">
+             <div className="grid grid-cols-2 gap-4">
+                <div onClick={() => navigate('/food/delivery/pocket/payout')} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 active:bg-gray-50">
+                   <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 mb-4 border border-blue-100">
+                      <IndianRupee className="w-5 h-5" />
+                   </div>
+                   <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Last Payout</p>
+                   <p className="text-xl font-black text-black leading-none mb-1">₹{walletState.payoutAmount}</p>
+                   <p className="text-[9px] text-gray-400 font-bold uppercase tracking-tight">Prev Week Info</p>
+                </div>
+
+                <div onClick={() => navigate('/food/delivery/pocket/limit-settlement')} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 active:bg-gray-50 flex flex-col justify-between">
+                   <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center text-[#FF6A00] mb-4 border border-red-100">
+                      <Receipt className="w-5 h-5" />
+                   </div>
+                   <p className="text-sm font-bold text-gray-800 leading-tight">Limit Settlement</p>
+                </div>
+             </div>
+
+             {/* Referral Bonus Row */}
+             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between active:bg-gray-50 transition-all" onClick={() => navigate('/food/delivery/pocket/balance')}>
+                <div className="flex items-center gap-4">
+                   <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center text-green-600 border border-green-100">
+                      <Gift className="w-6 h-6" />
+                   </div>
+                   <div>
+                      <span className="text-sm font-bold text-gray-800 block">Referral Bonus</span>
+                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">Earned Rewards</p>
+                   </div>
+                </div>
+                <div className="text-right">
+                   <p className="text-lg font-black text-green-600">+{formatCurrency(walletState.totalBonus)}</p>
+                </div>
+             </div>
+
+             <div className="grid grid-cols-2 gap-4">
+                <div onClick={() => navigate('/food/delivery/pocket/deductions')} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 active:bg-gray-50 flex flex-col justify-between">
+                   <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center text-red-600 mb-4 border border-red-100">
+                      <FileText className="w-5 h-5" />
+                   </div>
+                   <p className="text-sm font-bold text-gray-800 leading-tight">Deduction List</p>
+                </div>
+
+                <div onClick={() => navigate('/food/delivery/pocket/details')} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 active:bg-gray-50 flex flex-col justify-between">
+                   <div className="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center text-purple-600 mb-4 border border-purple-100">
+                      <LayoutGrid className="w-5 h-5" />
+                   </div>
+                   <p className="text-sm font-bold text-gray-800 leading-tight">Pocket statement</p>
+                </div>
+             </div>
+          </div>
+       </div>
+
+       <WalletTopupPopup
+          open={showTopupPopup}
+          onClose={() => setShowTopupPopup(false)}
+          onSuccess={handleDepositSuccess}
+          pocketBalance={walletState.totalBalance}
+          minWalletToReceiveOrders={walletState.minWalletToReceiveOrders}
+          shortfall={walletState.walletShortfall}
+       />
+
+       {/* DEPOSIT POPUP - Multi-mode: Online / Admin Details / Zone Hub */}
+       <AnimatePresence>
+          {showDepositPopup && (
+             <div className="fixed inset-0 z-[1000] bg-white flex flex-col">
+                <motion.div
+                   initial={{ y: '100%' }}
+                   animate={{ y: 0 }}
+                   exit={{ y: '100%' }}
+                   transition={{ type: 'spring', damping: 28, stiffness: 220 }}
+                   className="relative w-full h-full bg-white flex flex-col overflow-hidden"
+                >
+                   {/* Popup header */}
+                   <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-slate-100 bg-white">
+                      <div>
+                         <h3 className="text-base font-black text-slate-900 uppercase tracking-tight">Deposit Cash Limit</h3>
+                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Choose settlement method</p>
+                      </div>
+                      <button
+                         onClick={() => setShowDepositPopup(false)}
+                         className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-colors"
+                      >
+                         <X className="w-4 h-4" />
+                      </button>
+                   </div>
+                   {/* Deposit Popup Component */}
+                   <div className="flex-1 overflow-y-auto bg-white">
+                      <DepositPopup
+                         cashInHand={walletState.cashInHand}
+                         onSuccess={handleDepositSuccess}
+                      />
+                   </div>
+                </motion.div>
+             </div>
+          )}
+       </AnimatePresence>
+
+       {/* Icon Helper for Navigation Drawer */}
+       <div className="hidden">
+          <ChevronRight />
+       </div>
+    </div>
+  );
+};
+
+export default PocketV2;
