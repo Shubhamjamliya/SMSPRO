@@ -2,6 +2,7 @@
  * Utility for Cloudinary image transformations.
  * Ensures images are served in WebP with optimized quality whenever possible.
  */
+import { getImageUrl } from "./getImageUrl";
 
 /**
  * Optimizes a Cloudinary URL by injecting transformations.
@@ -16,6 +17,12 @@
  */
 export const optimizeCloudinaryUrl = (url, options = {}) => {
   if (!url || typeof url !== "string") return url || "";
+
+  // Local uploads are stored as relative paths. Resolve them through the API
+  // host before any Cloudinary-specific processing.
+  if (/^\/uploads(?:\/|$)/i.test(url) || /^uploads\//i.test(url)) {
+    return getImageUrl(url);
+  }
 
   // Only process Cloudinary URLs
   if (!/res\.cloudinary\.com/i.test(url) || !/\/image\/upload\//i.test(url)) {

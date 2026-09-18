@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner";
 import { User, Mail, Phone, Save, Loader2, Upload, X, Pencil, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@core/context/AuthContext";
+import { getImageUrl } from "@/shared/utils/getImageUrl";
 
 const debugLog = (...args) => {}
 const debugWarn = (...args) => {}
@@ -498,7 +499,7 @@ export default function AdminProfile() {
                 {imagePreview || profile.profileImage ? (
                   <div className="relative w-48 h-48 border-2 border-neutral-300 rounded-lg overflow-hidden group">
                     <img
-                      src={imagePreview || profile.profileImage}
+                      src={getImageUrl(imagePreview || profile.profileImage)}
                       alt="Profile"
                       className="w-full h-full object-cover"
                     />

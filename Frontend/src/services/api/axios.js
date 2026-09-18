@@ -17,6 +17,20 @@ import {
 } from "./httpErrorHandling.js";
 import { notifyNetworkStatus } from "./networkToast.js";
 import { ApiErrorCode } from "./errors.js";
+import { getImageUrl } from "@/shared/utils/getImageUrl";
+
+const normalizeUploadUrls = (value) => {
+  if (typeof value === "string") {
+    return /^\/?uploads\//i.test(value) ? getImageUrl(value) : value;
+  }
+  if (Array.isArray(value)) return value.map(normalizeUploadUrls);
+  if (value && typeof value === "object") {
+    Object.entries(value).forEach(([key, child]) => {
+      value[key] = normalizeUploadUrls(child);
+    });
+  }
+  return value;
+};
 
 // Only force a redirect if the module whose session just died is the one actually being
 // viewed — a background 401 for an unrelated module shouldn't hijack the active session.
@@ -259,6 +273,9 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => {
     clearRequestWatchers(response?.config);
+    if (response?.data) {
+      response.data = normalizeUploadUrls(response.data);
+    }
     return response;
   },
   async (err) => {

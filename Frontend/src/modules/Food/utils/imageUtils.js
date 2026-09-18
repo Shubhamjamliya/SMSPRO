@@ -1,4 +1,5 @@
 import { optimizeCloudinaryUrl } from "../../../shared/utils/cloudinaryUtils";
+import { getImageUrl } from "../../../shared/utils/getImageUrl";
 
 export const normalizeImageUrl = (imageUrl, BACKEND_ORIGIN) => {
   if (typeof imageUrl !== "string") return "";
@@ -15,6 +16,10 @@ export const normalizeImageUrl = (imageUrl, BACKEND_ORIGIN) => {
     .replace(/\\/g, "/")
     .replace(/^(https?):\/(?!\/)/i, "$1://")
     .replace(/^(https?:\/\/)(https?:\/\/)/i, "$1");
+
+  if (/^\/uploads(?:\/|$)/i.test(normalizedInput) || /^uploads\//i.test(normalizedInput)) {
+    return getImageUrl(normalizedInput);
+  }
 
   if (/^\/\//.test(normalizedInput)) {
     normalizedInput = `${appProtocol || "https:"}${normalizedInput}`;

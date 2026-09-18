@@ -50,6 +50,7 @@ import {
   getAppLogo 
 } from "@common/utils/businessSettings";
 import useAdminNotifications from "@food/hooks/useAdminNotifications";
+import { getImageUrl } from "@/shared/utils/getImageUrl";
 const debugLog = (...args) => {}
 const debugWarn = (...args) => {}
 const debugError = (...args) => {}
@@ -65,6 +66,7 @@ export default function AdminNavbar({ onMenuClick }) {
   const [recentSearches, setRecentSearches] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [adminData, setAdminData] = useState(null);
+  const adminProfileImage = getImageUrl(adminData?.profileImage);
   const [logoUrl, setLogoUrl] = useState(() => getAppLogo('admin'));
   const [companyName, setCompanyName] = useState(() => getCompanyName());
   const searchInputRef = useRef(null);
@@ -387,11 +389,7 @@ export default function AdminNavbar({ onMenuClick }) {
                   <div className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center overflow-hidden border border-neutral-300 shrink-0">
                     {adminData?.profileImage ? (
                       <img
-                        src={
-                          typeof adminData.profileImage === "string"
-                            ? adminData.profileImage.trim() || undefined
-                            : adminData.profileImage?.url || undefined
-                        }
+                        src={adminProfileImage || undefined}
                         alt={adminData.name || "Admin"}
                         className="w-full h-full object-cover"
                       />
@@ -439,11 +437,7 @@ export default function AdminNavbar({ onMenuClick }) {
                     <div className="w-12 h-12 rounded-full bg-neutral-100 flex items-center justify-center overflow-hidden border border-neutral-300">
                       {adminData?.profileImage ? (
                         <img
-                          src={
-                            typeof adminData.profileImage === "string"
-                              ? adminData.profileImage.trim() || undefined
-                              : adminData.profileImage?.url || undefined
-                          }
+                          src={adminProfileImage || undefined}
                           alt={adminData.name || "Admin"}
                           className="w-full h-full object-cover"
                         />
