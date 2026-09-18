@@ -1,6 +1,9 @@
 import { GlobalSettings } from "../models/settings.model.js";
 import { sendResponse } from "../../../utils/response.js";
-import { uploadImageBufferDetailed } from "../../../services/cloudinary.service.js";
+import {
+  uploadImageBufferDetailed,
+  invalidateImageStorageProviderCache,
+} from "../../../services/cloudinary.service.js";
 import { ValidationError } from "../../../core/auth/errors.js";
 import {
   assertAtLeastOneModuleEnabled,
@@ -92,6 +95,7 @@ export async function updateGlobalSettings(req, res, next) {
       sellerLoginBannerActive,
       restaurantLoginBannerActive,
       themeColor,
+      imageStorageProvider,
       modules,
       minWalletToReceiveOrders,
     } = data;
@@ -232,6 +236,17 @@ export async function updateGlobalSettings(req, res, next) {
       settings.themeColor = normalizedThemeColor || "#0a0a0a";
     }
 
+    if (imageStorageProvider !== undefined) {
+      const normalizedProvider = String(imageStorageProvider).trim().toLowerCase();
+      if (!['cloudinary', 'local'].includes(normalizedProvider)) {
+        return res.status(400).json({
+          success: false,
+          message: "Image storage provider must be cloudinary or local",
+        });
+      }
+      settings.imageStorageProvider = normalizedProvider;
+    }
+
     const hasModuleUpdate = modules !== undefined || data.modules !== undefined;
     if (hasModuleUpdate) {
       const allowedModules = getAllowedModuleKeys(GlobalSettings);
@@ -298,6 +313,7 @@ export async function updateGlobalSettings(req, res, next) {
     }
 
     await settings.save();
+    invalidateImageStorageProviderCache();
 
     try {
       const { invalidateModuleEnabledCache } = await import(

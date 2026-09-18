@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   ChevronRight,
   Save,
@@ -14,8 +15,8 @@ import { setCachedSettings } from "@/modules/common/utils/businessSettings";
 import { cn } from "@/lib/utils";
 import { compressImage } from "@/shared/utils/imageCompression";
 
-const SectionCard = ({ title, children, id }) => (
-  <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-8" id={id}>
+const SectionCard = ({ title, children, id, className = '' }) => (
+  <div className={cn("bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-8", className)} id={id}>
     {title && (
       <div className="px-8 py-4 border-b border-gray-100 bg-gray-50/30">
         <h3 className="text-[13px] font-bold text-gray-700 uppercase tracking-tight">{title}</h3>
@@ -61,16 +62,19 @@ const InputField = ({ label, name, value, onChange, placeholder, info, maxLength
   );
 };
 
-const ImageUploadBox = ({ title, size, preview, onUpload, onClear }) => {
+const ImageUploadBox = ({ title, size, preview, onUpload, onClear, compact = false }) => {
   const fileInputRef = useRef(null);
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between px-0.5">
         <label className="text-xs font-bold text-gray-500">{title}({size})</label>
       </div>
-      <div className="aspect-[2/1] w-full rounded-xl border border-dashed border-gray-300 bg-gray-50/50 relative overflow-hidden group hover:border-indigo-300 transition-colors cursor-pointer flex items-center justify-center" onClick={() => fileInputRef.current?.click()}>
+      <div className={cn(
+        "w-full rounded-xl border border-dashed border-gray-300 bg-gray-50/50 relative overflow-hidden group hover:border-indigo-300 transition-colors cursor-pointer flex items-center justify-center",
+        compact ? "aspect-[2.4/1]" : "aspect-[2/1]"
+      )} onClick={() => fileInputRef.current?.click()}>
         {preview ? (
-          <img src={preview} alt={title} className="w-full h-full object-contain p-6" />
+          <img src={preview} alt={title} className={cn("w-full h-full object-contain", compact ? "p-4" : "p-6")} />
         ) : (
           <div className="flex flex-col items-center justify-center gap-2 text-gray-400">
             <p className="text-[11px] font-bold uppercase tracking-widest">Upload Image</p>
@@ -94,7 +98,9 @@ const ImageUploadBox = ({ title, size, preview, onUpload, onClear }) => {
   );
 };
 
-const GlobalApplicationSettings = () => {
+const GlobalApplicationSettings = ({ logoOnly = false }) => {
+  const location = useLocation();
+  const isLogoPage = logoOnly || location.pathname.endsWith('/global-settings/logo');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -290,20 +296,50 @@ const GlobalApplicationSettings = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6 lg:p-10 font-sans">
+    <div className={cn(
+      "min-h-screen font-sans",
+      isLogoPage ? "bg-[#f6f8fc] p-4 sm:p-6 lg:p-10" : "bg-gray-50 p-6 lg:p-10"
+    )}>
 
       {/* Header */}
-      <div className="mb-10 flex items-center justify-between">
-        <h1 className="text-[15px] font-black text-gray-800 uppercase tracking-widest">GLOBAL SETTINGS</h1>
+      <div className={cn("mb-10 flex items-center justify-between", isLogoPage && "mb-7") }>
+        <div>
+          <h1 className="text-[15px] font-black text-gray-800 uppercase tracking-widest">
+            {isLogoPage ? 'LOGO SETTINGS' : 'GLOBAL SETTINGS'}
+          </h1>
+          {isLogoPage && (
+            <p className="mt-2 max-w-xl text-sm text-gray-500">
+              Manage the brand identity used across the admin, customer, delivery, restaurant, and seller portals.
+            </p>
+          )}
+        </div>
         <div className="flex items-center gap-1.5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">
           <span>Common</span>
           <ChevronRight size={12} strokeWidth={3} />
-          <span className="text-gray-600">Global Settings</span>
+          <span className="text-gray-600">{isLogoPage ? 'Logo' : 'Global Settings'}</span>
         </div>
       </div>
 
-      <div className="max-w-[1600px] mx-auto space-y-10 pb-32">
+      <div className={cn("max-w-[1600px] mx-auto space-y-10 pb-32", isLogoPage && "space-y-6")}>
 
+        {isLogoPage && (
+          <div className="flex items-center justify-between gap-4 rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 via-white to-white px-5 py-4 shadow-sm sm:px-6">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-200">
+                <ImageIcon size={19} />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-gray-800">Portal brand assets</p>
+                <p className="mt-0.5 text-xs text-gray-500">Upload clear PNG, JPG, or WebP files for the best result.</p>
+              </div>
+            </div>
+            <span className="hidden rounded-full bg-white px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-indigo-600 shadow-sm sm:inline-flex">
+              5 portals
+            </span>
+          </div>
+        )}
+
+        {!isLogoPage && (<>
         {/* Basic Identification */}
         <SectionCard title="Application Identification">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8">
@@ -339,44 +375,47 @@ const GlobalApplicationSettings = () => {
             </div>
           </div>
         </SectionCard>
+        </>)}
 
-        {/* Individual App Assets */}
-        <SectionCard title="Admin Application">
+        {isLogoPage && <>
+        {/* Logo and favicon management */}
+        <SectionCard title="Admin Application" className={isLogoPage ? "logo-section-card mb-0" : ''}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-            <ImageUploadBox title="Admin Logo" size="200px x 50px" preview={adminLogoPreview} onUpload={(file) => handleFileUpload(file, setAdminLogoFile, setAdminLogoPreview)} onClear={() => { setAdminLogoPreview(null); setAdminLogoFile(null); }} />
-            <ImageUploadBox title="Admin Favicon" size="80px x 80px" preview={adminFaviconPreview} onUpload={(file) => handleFileUpload(file, setAdminFaviconFile, setAdminFaviconPreview)} onClear={() => { setAdminFaviconPreview(null); setAdminFaviconFile(null); }} />
+            <ImageUploadBox compact={isLogoPage} title="Admin Logo" size="200px x 50px" preview={adminLogoPreview} onUpload={(file) => handleFileUpload(file, setAdminLogoFile, setAdminLogoPreview)} onClear={() => { setAdminLogoPreview(null); setAdminLogoFile(null); }} />
+            <ImageUploadBox compact={isLogoPage} title="Admin Favicon" size="80px x 80px" preview={adminFaviconPreview} onUpload={(file) => handleFileUpload(file, setAdminFaviconFile, setAdminFaviconPreview)} onClear={() => { setAdminFaviconPreview(null); setAdminFaviconFile(null); }} />
           </div>
         </SectionCard>
 
-        <SectionCard title="User Application">
+        <SectionCard title="User Application" className={isLogoPage ? "logo-section-card mb-0" : ''}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-            <ImageUploadBox title="User Logo" size="200px x 50px" preview={userLogoPreview} onUpload={(file) => handleFileUpload(file, setUserLogoFile, setUserLogoPreview)} onClear={() => { setUserLogoPreview(null); setUserLogoFile(null); }} />
-            <ImageUploadBox title="User Favicon" size="80px x 80px" preview={userFaviconPreview} onUpload={(file) => handleFileUpload(file, setUserFaviconFile, setUserFaviconPreview)} onClear={() => { setUserFaviconPreview(null); setUserFaviconFile(null); }} />
+            <ImageUploadBox compact={isLogoPage} title="User Logo" size="200px x 50px" preview={userLogoPreview} onUpload={(file) => handleFileUpload(file, setUserLogoFile, setUserLogoPreview)} onClear={() => { setUserLogoPreview(null); setUserLogoFile(null); }} />
+            <ImageUploadBox compact={isLogoPage} title="User Favicon" size="80px x 80px" preview={userFaviconPreview} onUpload={(file) => handleFileUpload(file, setUserFaviconFile, setUserFaviconPreview)} onClear={() => { setUserFaviconPreview(null); setUserFaviconFile(null); }} />
           </div>
         </SectionCard>
 
-        <SectionCard title="Delivery Application">
+        <SectionCard title="Delivery Application" className={isLogoPage ? "logo-section-card mb-0" : ''}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-            <ImageUploadBox title="Delivery Logo" size="200px x 50px" preview={deliveryLogoPreview} onUpload={(file) => handleFileUpload(file, setDeliveryLogoFile, setDeliveryLogoPreview)} onClear={() => { setDeliveryLogoPreview(null); setDeliveryLogoFile(null); }} />
-            <ImageUploadBox title="Delivery Favicon" size="80px x 80px" preview={deliveryFaviconPreview} onUpload={(file) => handleFileUpload(file, setDeliveryFaviconFile, setDeliveryFaviconPreview)} onClear={() => { setDeliveryFaviconPreview(null); setDeliveryFaviconFile(null); }} />
+            <ImageUploadBox compact={isLogoPage} title="Delivery Logo" size="200px x 50px" preview={deliveryLogoPreview} onUpload={(file) => handleFileUpload(file, setDeliveryLogoFile, setDeliveryLogoPreview)} onClear={() => { setDeliveryLogoPreview(null); setDeliveryLogoFile(null); }} />
+            <ImageUploadBox compact={isLogoPage} title="Delivery Favicon" size="80px x 80px" preview={deliveryFaviconPreview} onUpload={(file) => handleFileUpload(file, setDeliveryFaviconFile, setDeliveryFaviconPreview)} onClear={() => { setDeliveryFaviconPreview(null); setDeliveryFaviconFile(null); }} />
           </div>
         </SectionCard>
 
-        <SectionCard title="Restaurant Application">
+        <SectionCard title="Restaurant Application" className={isLogoPage ? "logo-section-card mb-0" : ''}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-            <ImageUploadBox title="Restaurant Logo" size="200px x 50px" preview={restaurantLogoPreview} onUpload={(file) => handleFileUpload(file, setRestaurantLogoFile, setRestaurantLogoPreview)} onClear={() => { setRestaurantLogoPreview(null); setRestaurantLogoFile(null); }} />
-            <ImageUploadBox title="Restaurant Favicon" size="80px x 80px" preview={restaurantFaviconPreview} onUpload={(file) => handleFileUpload(file, setRestaurantFaviconFile, setRestaurantFaviconPreview)} onClear={() => { setRestaurantFaviconPreview(null); setRestaurantFaviconFile(null); }} />
+            <ImageUploadBox compact={isLogoPage} title="Restaurant Logo" size="200px x 50px" preview={restaurantLogoPreview} onUpload={(file) => handleFileUpload(file, setRestaurantLogoFile, setRestaurantLogoPreview)} onClear={() => { setRestaurantLogoPreview(null); setRestaurantLogoFile(null); }} />
+            <ImageUploadBox compact={isLogoPage} title="Restaurant Favicon" size="80px x 80px" preview={restaurantFaviconPreview} onUpload={(file) => handleFileUpload(file, setRestaurantFaviconFile, setRestaurantFaviconPreview)} onClear={() => { setRestaurantFaviconPreview(null); setRestaurantFaviconFile(null); }} />
           </div>
         </SectionCard>
 
-        <SectionCard title="Seller Application">
+        <SectionCard title="Seller Application" className={isLogoPage ? "logo-section-card mb-0" : ''}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-            <ImageUploadBox title="Seller Logo" size="200px x 50px" preview={sellerLogoPreview} onUpload={(file) => handleFileUpload(file, setSellerLogoFile, setSellerLogoPreview)} onClear={() => { setSellerLogoPreview(null); setSellerLogoFile(null); }} />
-            <ImageUploadBox title="Seller Favicon" size="80px x 80px" preview={sellerFaviconPreview} onUpload={(file) => handleFileUpload(file, setSellerFaviconFile, setSellerFaviconPreview)} onClear={() => { setSellerFaviconPreview(null); setSellerFaviconFile(null); }} />
+            <ImageUploadBox compact={isLogoPage} title="Seller Logo" size="200px x 50px" preview={sellerLogoPreview} onUpload={(file) => handleFileUpload(file, setSellerLogoFile, setSellerLogoPreview)} onClear={() => { setSellerLogoPreview(null); setSellerLogoFile(null); }} />
+            <ImageUploadBox compact={isLogoPage} title="Seller Favicon" size="80px x 80px" preview={sellerFaviconPreview} onUpload={(file) => handleFileUpload(file, setSellerFaviconFile, setSellerFaviconPreview)} onClear={() => { setSellerFaviconPreview(null); setSellerFaviconFile(null); }} />
           </div>
         </SectionCard>
+        </>}
 
-        <SectionCard title="Portal Login Banners">
+        {!isLogoPage && <SectionCard title="Portal Login Banners">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
             <div className="space-y-4">
               <ImageUploadBox 
@@ -422,7 +461,7 @@ const GlobalApplicationSettings = () => {
               </div>
             </div>
           </div>
-        </SectionCard>
+        </SectionCard>}
 
       </div>
 

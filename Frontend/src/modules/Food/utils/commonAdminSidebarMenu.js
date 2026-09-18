@@ -6,6 +6,13 @@ export const commonAdminSidebarMenu = [
     items: [
       {
         type: "link",
+        label: "Logo",
+        permissionKey: "app_settings",
+        path: "/admin/global-settings/logo",
+        icon: "Image",
+      },
+      {
+        type: "link",
         label: "App Settings",
         permissionKey: "app_settings",
         path: "/admin/global-settings/app",
@@ -46,6 +53,20 @@ export const commonAdminSidebarMenu = [
             icon: "Car",
           },
         ],
+      },
+    ],
+  },
+  {
+    type: "section",
+    label: "Developer Settings",
+    permissionKey: "developer_settings",
+    items: [
+      {
+        type: "link",
+        label: "Toggles",
+        permissionKey: "modules",
+        path: "/admin/global-settings/toggles",
+        icon: "Zap",
       },
     ],
   },

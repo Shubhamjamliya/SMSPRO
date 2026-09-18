@@ -1128,12 +1128,40 @@ export default function AdminSidebar({
         }
         
         .admin-sidebar-responsive-bg {
-          background-color: #ffffff !important;
+          background-color: #000000 !important;
+          color: #f8fafc;
+          border-color: #262626 !important;
         }
         @media (min-width: 1024px) {
           .admin-sidebar-responsive-bg {
-            background-color: #ffffffcc !important;
+            background-color: #000000 !important;
           }
+        }
+
+        .admin-sidebar-responsive-bg [class*="text-[#5C5247]"],
+        .admin-sidebar-responsive-bg [class*="text-[#7C7062]"],
+        .admin-sidebar-responsive-bg [class*="text-[#1A1A1A]"] {
+          color: #d1d5db !important;
+        }
+
+        .admin-sidebar-responsive-bg [class*="border-[#EDE8E0]"],
+        .admin-sidebar-responsive-bg [class*="border-[#D4CBBF]"] {
+          border-color: #262626 !important;
+        }
+
+        .admin-sidebar-responsive-bg [class*="bg-[#ffffffcc]"],
+        .admin-sidebar-responsive-bg [class*="bg-[#FAF7F2]"] {
+          background-color: #111111 !important;
+        }
+
+        .admin-sidebar-responsive-bg input {
+          background-color: #111111 !important;
+          border-color: #262626 !important;
+          color: #f8fafc !important;
+        }
+
+        .admin-sidebar-responsive-bg input::placeholder {
+          color: #9ca3af !important;
         }
       `}</style>
       <div
@@ -1219,9 +1247,10 @@ export default function AdminSidebar({
               </h2>
               <div className="mt-2 space-y-2">
                 <div
-                  className="grid gap-0.5 rounded-xl border border-[#EDE8E0] bg-[#ffffffcc] p-1"
+                  className="grid gap-0.5 rounded-lg border border-[#EDE8E0] bg-[#ffffffcc] p-0.5"
                   style={{
-                    gridTemplateColumns: `repeat(${Math.max(visibleModuleTabs.length, 1)}, minmax(0, 1fr))`,
+                    // Wrap module tabs into rows so labels stay readable.
+                    gridTemplateColumns: `repeat(${Math.min(Math.max(visibleModuleTabs.length, 1), 3)}, minmax(0, 1fr))`,
                   }}
                   role="tablist"
                   aria-label="Switch admin module"
@@ -1235,7 +1264,7 @@ export default function AdminSidebar({
                       title={tab.label}
                       onClick={tab.onClick}
                       className={cn(
-                        "min-w-0 rounded-lg px-0.5 py-2 text-[10px] font-bold uppercase tracking-wide transition-all truncate",
+                        "min-w-0 h-5 min-h-0 rounded-md px-0.5 py-0 text-[8px] font-bold uppercase leading-none tracking-wide transition-all whitespace-normal",
                         tab.active
                           ? "bg-[#FF6A00] text-white shadow-[0_4px_12px_rgba(255,106,0,0.2)]"
                           : "text-[#5C5247] hover:text-[#1A1A1A] hover:bg-white/80",

@@ -1,5 +1,28 @@
 import { v2 as cloudinary } from 'cloudinary';
 import { config } from '../config/env.js';
+import { GlobalSettings } from '../modules/common/models/settings.model.js';
+import { uploadImageBuffer as uploadLocalImageBuffer } from './storage.service.js';
+
+let imageStorageProviderCache = null;
+let imageStorageProviderCacheAt = 0;
+const IMAGE_STORAGE_CACHE_TTL_MS = 30_000;
+
+const getImageStorageProvider = async () => {
+    const now = Date.now();
+    if (imageStorageProviderCache && now - imageStorageProviderCacheAt < IMAGE_STORAGE_CACHE_TTL_MS) {
+        return imageStorageProviderCache;
+    }
+
+    const settings = await GlobalSettings.findOne().select('imageStorageProvider').lean();
+    imageStorageProviderCache = settings?.imageStorageProvider === 'local' ? 'local' : 'cloudinary';
+    imageStorageProviderCacheAt = now;
+    return imageStorageProviderCache;
+};
+
+export const invalidateImageStorageProviderCache = () => {
+    imageStorageProviderCache = null;
+    imageStorageProviderCacheAt = 0;
+};
 
 cloudinary.config({
     cloud_name: config.cloudinaryCloudName,
@@ -31,6 +54,10 @@ export const uploadImageBuffer = async (buffer, folder = 'uploads') => {
         throw new Error('File buffer is required');
     }
 
+    if (await getImageStorageProvider() === 'local') {
+        return uploadLocalImageBuffer(buffer, folder);
+    }
+
     return new Promise((resolve, reject) => {
         const stream = cloudinary.uploader.upload_stream(
             getImageUploadOptions(folder),
@@ -49,6 +76,15 @@ export const uploadImageBuffer = async (buffer, folder = 'uploads') => {
 export const uploadImageBufferDetailed = async (buffer, folder = 'uploads') => {
     if (!buffer) {
         throw new Error('File buffer is required');
+    }
+
+    if (await getImageStorageProvider() === 'local') {
+        const secureUrl = await uploadLocalImageBuffer(buffer, folder);
+        return {
+            secure_url: secureUrl,
+            public_id: null,
+            resource_type: 'image',
+        };
     }
 
     return new Promise((resolve, reject) => {
@@ -75,6 +111,12 @@ export const uploadBufferDetailed = async (
 ) => {
     if (!buffer) {
         throw new Error('File buffer is required');
+    }
+
+    // Keep image uploads on the selected provider as well. Non-image assets
+    // continue using Cloudinary's resource-type handling.
+    if (resourceType === 'image') {
+        return uploadImageBufferDetailed(buffer, folder);
     }
 
     return new Promise((resolve, reject) => {

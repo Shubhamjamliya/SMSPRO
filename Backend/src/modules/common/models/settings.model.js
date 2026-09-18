@@ -114,6 +114,11 @@ const globalSettingsSchema = new mongoose.Schema(
       active: { type: Boolean, default: true },
     },
     themeColor: { type: String, default: "#0a0a0a" },
+    imageStorageProvider: {
+      type: String,
+      enum: ["cloudinary", "local"],
+      default: "cloudinary",
+    },
     /** Pocket wallet every driver must keep to receive food/taxi/porter jobs. 0 = disabled. */
     minWalletToReceiveOrders: { type: Number, min: 0 },
     modules: {

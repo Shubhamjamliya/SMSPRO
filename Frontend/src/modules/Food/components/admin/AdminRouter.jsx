@@ -347,6 +347,9 @@ const DriverMinWalletSettings = lazy(
 const ModuleManagement = lazy(
   () => import("@/modules/common/admin/pages/ModuleManagement"),
 );
+const DeveloperToggles = lazy(
+  () => import("@/modules/common/admin/pages/DeveloperToggles"),
+);
 const VehicleConfiguration = lazy(
   () => import("@/modules/common/admin/pages/VehicleConfiguration"),
 );
@@ -460,8 +463,10 @@ export default function AdminRouter() {
           <Route path="global-settings">
             <Route index element={<Navigate to="app" replace />} />
             <Route path="app" element={<GlobalApplicationSettings />} />
+            <Route path="logo" element={<GlobalApplicationSettings logoOnly />} />
             <Route path="admin" element={<AdminProfile />} />
             <Route path="modules" element={<ModuleManagement />} />
+            <Route path="toggles" element={<DeveloperToggles />} />
             <Route
               path="vehicle-configuration"
               element={<VehicleConfiguration />}
