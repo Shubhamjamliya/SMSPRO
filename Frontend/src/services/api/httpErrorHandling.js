@@ -41,7 +41,10 @@ export function clearRequestWatchers(config) {
  * Skips multipart uploads and background calls — those are expected to take longer.
  */
 export function attachSlowNetworkWatcher(config, onSlow) {
-  if (!config || config.skipSlowWarning || config.background) return config;
+  // Slow requests are common during development and on large admin pages. Do
+  // not show a global toast for every pending request; opt in per request when
+  // a slow-network warning is genuinely useful.
+  if (!config || config.skipSlowWarning || config.background || config.notifySlowNetwork !== true) return config;
   if (typeof FormData !== "undefined" && config.data instanceof FormData) {
     return config;
   }

@@ -1,4 +1,5 @@
 import { GlobalSettings } from "../models/settings.model.js";
+import mongoose from "mongoose";
 import { sendResponse } from "../../../utils/response.js";
 import {
   uploadImageBufferDetailed,
@@ -12,6 +13,62 @@ import {
   mergeModuleSettings,
   sanitizeIncomingModules,
 } from "../utils/moduleSettings.js";
+
+// Deliberately explicit: this reset must never delete users, catalogues,
+// wallets, settings, admins, or any other non-operational data.
+const RESETTABLE_OPERATIONAL_COLLECTIONS = [
+  "food_orders",
+  "food_order_events",
+  "food_transactions",
+  "quick_seller_orders",
+  "quick_seller_transactions",
+  "quick_seller_returns",
+  "quick_payment_intents",
+  "service_provider_bookings",
+  "taxi_rides",
+  "taxi_ride_events",
+  "bike_bookings",
+  "bike_rent_finance_transactions",
+  "bike_rent_settlements",
+  "bike_rent_settlement_adjustments",
+  "bike_rent_transaction_tax_breakdowns",
+  "porter_trips",
+  "payments",
+  "transactions",
+  "settlements",
+  "refunds",
+];
+
+export async function resetOperationalData(req, res, next) {
+  try {
+    if (req.body?.confirmation !== "RESET_OPERATIONAL_DATA") {
+      return res.status(400).json({
+        success: false,
+        message: "Confirmation text does not match",
+      });
+    }
+
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ success: false, message: "Database is not connected" });
+    }
+
+    const deleted = {};
+    let totalDeleted = 0;
+    for (const collectionName of RESETTABLE_OPERATIONAL_COLLECTIONS) {
+      const result = await mongoose.connection.db.collection(collectionName).deleteMany({});
+      deleted[collectionName] = result.deletedCount || 0;
+      totalDeleted += result.deletedCount || 0;
+    }
+
+    return sendResponse(res, 200, "Operational data reset completed", {
+      collections: RESETTABLE_OPERATIONAL_COLLECTIONS,
+      deleted,
+      totalDeleted,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
 
 export async function getGlobalSettings(req, res, next) {
   try {

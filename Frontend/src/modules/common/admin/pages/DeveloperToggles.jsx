@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { AlertCircle, Cloud, ChevronRight, FolderOpen, Loader2, Save, Server } from "lucide-react";
+import { AlertCircle, Cloud, ChevronRight, FolderOpen, Loader2, Save, Server, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { adminAPI } from "@/services/api";
 import { setCachedSettings } from "@/modules/common/utils/businessSettings";
@@ -26,6 +26,7 @@ const DeveloperToggles = () => {
   const [provider, setProvider] = useState("cloudinary");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -53,6 +54,30 @@ const DeveloperToggles = () => {
       toast.error(error?.response?.data?.message || "Failed to save image upload setting");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const resetOperationalData = async () => {
+    const confirmed = window.confirm(
+      "This will permanently delete orders, bookings, payments, and transaction records only. Users, products, wallets, settings, and admins will remain. Continue?",
+    );
+    if (!confirmed) return;
+
+    const phrase = window.prompt("Type RESET_OPERATIONAL_DATA to confirm:");
+    if (phrase !== "RESET_OPERATIONAL_DATA") {
+      toast.error("Reset cancelled. Confirmation text did not match.");
+      return;
+    }
+
+    try {
+      setResetting(true);
+      const response = await adminAPI.resetOperationalData(phrase);
+      const result = response?.data?.data || response?.data || {};
+      toast.success(`Operational data reset. ${result.totalDeleted || 0} records deleted.`);
+    } catch (error) {
+      toast.error(error?.response?.data?.message || "Failed to reset operational data");
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -129,6 +154,23 @@ const DeveloperToggles = () => {
             Save toggle
           </button>
         </div>
+
+        <section className="mt-8 rounded-lg border border-red-200 bg-white shadow-sm">
+          <div className="flex items-start justify-between gap-4 border-b border-red-100 px-4 py-3 sm:px-5">
+            <div>
+              <h2 className="text-sm font-semibold text-red-700">Reset operational data</h2>
+              <p className="mt-1 text-xs text-gray-500">Delete orders, bookings, payments, settlements, refunds, and transaction records only.</p>
+            </div>
+            <Trash2 size={17} className="mt-0.5 shrink-0 text-red-500" />
+          </div>
+          <div className="flex flex-col items-start justify-between gap-3 px-4 py-4 sm:flex-row sm:items-center sm:px-5">
+            <p className="text-[11px] leading-relaxed text-red-600">This action is permanent. Accounts, catalogues, wallets, settings, and admin data are excluded.</p>
+            <button type="button" onClick={resetOperationalData} disabled={resetting} className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-red-300 bg-white px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60">
+              {resetting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+              {resetting ? "Resetting..." : "Reset data"}
+            </button>
+          </div>
+        </section>
       </div>
     </div>
   );

@@ -1120,6 +1120,10 @@ export const adminAPI = {
       contextModule: "admin",
     });
   },
+  resetOperationalData: (confirmation) =>
+    apiClient.post("/common/settings/reset-operational-data", { confirmation }, {
+      contextModule: "admin",
+    }),
   /** GET /food/admin/customer-role-requests (Bearer ADMIN) */
   getCustomerRoleRequests: () =>
     apiClient.get("/food/admin/customer-role-requests", {
