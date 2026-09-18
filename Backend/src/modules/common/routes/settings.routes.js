@@ -42,6 +42,13 @@ router.patch('/', authMiddleware, requireRoles('ADMIN'), upload.fields([
     { name: 'restaurantLoginBanner', maxCount: 1 }
 ]), settingsController.updateGlobalSettings);
 
+router.post(
+    '/reset-operational-data',
+    authMiddleware,
+    requireRoles('ADMIN'),
+    settingsController.resetOperationalData,
+);
+
 router.get(
     '/vehicle-configurations',
     authMiddleware,
