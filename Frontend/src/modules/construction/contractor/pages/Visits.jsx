@@ -6,6 +6,7 @@ import contractorApi from "../services/contractorApi";
 import { dateTime } from "../../shared/format";
 import ContractorShell from "../components/ContractorShell";
 import { PhotoPicker } from "../../shared/FilePicker";
+import PackageVisits from "../components/PackageVisits";
 
 const errorMessage = (error, fallback) => error?.response?.data?.message || fallback;
 
@@ -36,6 +37,34 @@ const STATUS_LABEL = {
  * Check-in uses the device's GPS so the record shows the contractor was there.
  */
 export default function Visits() {
+  const [params] = useSearchParams();
+  // Package visits (paid bookings) lead; the enquiry visit scheduler is one tap away, and opens
+  // directly when the page is reached with `?enquiry=`.
+  const [tab, setTab] = useState(params.get("enquiry") ? "enquiry" : "package");
+
+  const switcher = (
+    <div className="mb-4 flex gap-1 rounded-xl bg-gray-100 p-1" role="tablist">
+      {[["package", "Package visits"], ["enquiry", "Enquiry visits"]].map(([key, label]) => (
+        <button
+          key={key}
+          type="button"
+          role="tab"
+          aria-selected={tab === key}
+          onClick={() => setTab(key)}
+          className={`flex-1 rounded-lg py-2 text-[13px] font-semibold transition-colors ${
+            tab === key ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
+  return tab === "package" ? <PackageVisits switcher={switcher} /> : <EnquiryVisits switcher={switcher} />;
+}
+
+function EnquiryVisits({ switcher }) {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const enquiryId = params.get("enquiry");
@@ -173,6 +202,7 @@ export default function Visits() {
       title="Site visits"
       subtitle={`${visits.filter((v) => ["proposed", "confirmed"].includes(v.status)).length} upcoming`}
     >
+      {switcher}
       {loading ? (
         <div className="space-y-3">
           {[0, 1].map((i) => <div key={i} className="h-28 animate-pulse rounded-xl bg-gray-100" />)}

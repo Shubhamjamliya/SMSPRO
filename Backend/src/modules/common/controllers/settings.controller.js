@@ -33,6 +33,8 @@ const RESETTABLE_OPERATIONAL_COLLECTIONS = [
   "bike_rent_settlement_adjustments",
   "bike_rent_transaction_tax_breakdowns",
   "porter_trips",
+  // Paid site-visit bookings (what contractors see under /contractor/package-requests).
+  "construction_package_requests",
   "payments",
   "transactions",
   "settlements",

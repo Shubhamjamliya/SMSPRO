@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { ArrowLeft, Check, Clock, HardHat, Minus, ShieldCheck, ChevronRight, Building2 } from "lucide-react";
 import constructionApi from "../services/api";
@@ -25,6 +25,9 @@ const formatBudget = ({ min, max } = {}) => {
  */
 export default function ServiceDetail() {
   const { idOrSlug } = useParams();
+  const [searchParams] = useSearchParams();
+  // Set when the customer arrived from a Budget Friendly card; carried on to the enquiry form.
+  const budgetId = searchParams.get("budget");
   const navigate = useNavigate();
   const [service, setService] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -196,7 +199,7 @@ export default function ServiceDetail() {
           <div className="mx-auto max-w-lg">
             <button
               type="button"
-              onClick={() => navigate(`/construction/services/${service.slug || service.id}/enquire`)}
+              onClick={() => navigate(`/construction/services/${service.slug || service.id}/enquire${budgetId ? `?budget=${budgetId}` : ""}`)}
               className="group flex w-full items-center justify-center gap-2 rounded-xl bg-amber-500 py-3 text-sm font-extrabold text-slate-950 shadow-xs hover:bg-amber-400 active:scale-[0.98] transition-all"
             >
               Get a Free Quote <ChevronRight className="h-4 w-4 stroke-[2.5] group-hover:translate-x-0.5 transition-transform" />

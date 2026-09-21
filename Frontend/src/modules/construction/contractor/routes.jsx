@@ -8,6 +8,8 @@ const Register = React.lazy(() => import("./pages/Register"));
 const Status = React.lazy(() => import("./pages/Status"));
 const Dashboard = React.lazy(() => import("./pages/Dashboard"));
 const Leads = React.lazy(() => import("./pages/Leads"));
+const PackageRequests = React.lazy(() => import("./pages/PackageRequests"));
+const PackageRequestDetail = React.lazy(() => import("./pages/PackageRequestDetail"));
 const Jobs = React.lazy(() => import("./pages/Jobs"));
 const Visits = React.lazy(() => import("./pages/Visits"));
 const Quotations = React.lazy(() => import("./pages/Quotations"));
@@ -54,6 +56,14 @@ export default function ContractorRoutes() {
         <Route
           path="leads"
           element={<ContractorProtectedRoute requireApproved><Leads /></ContractorProtectedRoute>}
+        />
+        <Route
+          path="package-requests"
+          element={<ContractorProtectedRoute requireApproved><PackageRequests /></ContractorProtectedRoute>}
+        />
+        <Route
+          path="package-requests/:id"
+          element={<ContractorProtectedRoute requireApproved><PackageRequestDetail /></ContractorProtectedRoute>}
         />
         <Route
           path="jobs"

@@ -655,3 +655,33 @@
 
 
 
+
+/* ==========================================================================
+   ADMIN TYPOGRAPHY — Poppins
+   ==========================================================================
+   `admin-poppins` is put on <html> by enableAdminPoppins() while any /admin page
+   is open (see shared/utils/adminFont.js). Everything inherits its font from the
+   root, so changing it here reaches dialogs, dropdowns and toasts too — they render
+   into portals outside the admin layout. Removing the class hands the customer app
+   its own font back.
+
+   The rules below cover the few things that would otherwise ignore the root:
+   Tailwind's font utilities (including the Poppins/Outfit ones, which are aliased
+   to Inter for the customer app), Sonner toasts and map popups, which set their
+   own font. Code and monospace text is deliberately left alone.
+*/
+html.admin-poppins {
+  font-family: 'Poppins', system-ui, -apple-system, sans-serif;
+}
+
+html.admin-poppins .font-sans,
+html.admin-poppins .font-poppins,
+html.admin-poppins .font-outfit,
+html.admin-poppins .font-display,
+html.admin-poppins [data-sonner-toaster],
+html.admin-poppins [data-sonner-toast],
+html.admin-poppins .leaflet-container,
+html.admin-poppins .leaflet-popup-content,
+html.admin-poppins .leaflet-tooltip {
+  font-family: inherit;
+}

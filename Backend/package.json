@@ -29,6 +29,7 @@
     "db:seed-indore": "node scripts/seed-indore-restaurants.js",
     "db:seed-restaurant-categories": "node scripts/seed-restaurant-categories.js",
     "db:seed-construction": "node scripts/seed-construction-catalogue.js",
+    "migrate:budget-services": "node scripts/migrate-budget-services-to-own-collection.js",
     "migrate:construction-transparency": "node scripts/phase6-ensure-transparency-indexes.js",
     "repair:partial-indexes": "node scripts/repair-partial-unique-indexes.js",
     "demo:construction": "node scripts/seed-construction-demo.js",

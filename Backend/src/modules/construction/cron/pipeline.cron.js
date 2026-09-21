@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import { expireStaleLeads } from '../services/matching.service.js';
+import { expireStalePackageOffers, remindExpiringPackageOffers } from '../services/packageDispatch.service.js';
 import { expireQuotations } from '../services/quotation.service.js';
 import { escalateStaleApprovals, findDelayedStages, markStagesAlerted } from '../services/stage.service.js';
 import { releaseDueRetentions, reconcileAllProjects } from '../services/handover.service.js';
@@ -30,10 +31,25 @@ export function startConstructionPipelineCron() {
         try {
             if (!(await isModuleEnabled('construction'))) return;
 
-            const [leads, quotes] = await Promise.all([
+            // Remind BEFORE expiring, and not in parallel: an offer that lapses this run
+            // should not be nudged in the same breath.
+            await remindExpiringPackageOffers().catch((err) => {
+                logger.warn(`[construction] package offer reminders failed: ${err.message}`);
+            });
+
+            const [leads, quotes, packageOffers] = await Promise.all([
                 expireStaleLeads(),
                 expireQuotations(),
+                // Paid site-visit requests nobody answered in time move on to the next contractors.
+                expireStalePackageOffers(),
             ]);
+
+            if (packageOffers.expired) {
+                logger.info(
+                    `[construction] package request sweep: ${packageOffers.expired} request(s) had unanswered offers, `
+                    + `${packageOffers.resent} sent on to new contractors`,
+                );
+            }
 
             if (leads.expired || quotes.expired) {
                 logger.info(

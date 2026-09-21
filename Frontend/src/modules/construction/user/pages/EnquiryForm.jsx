@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { ArrowLeft, X, MapPin, Building2, Calendar, Wallet, Camera, ChevronRight, CheckCircle2 } from "lucide-react";
 import constructionApi from "../services/api";
@@ -52,6 +52,8 @@ function Field({ label, required, hint, error, children }) {
  */
 export default function EnquiryForm() {
   const { serviceId } = useParams();
+  const [searchParams] = useSearchParams();
+  const budgetServiceId = searchParams.get("budget") || undefined;
   const navigate = useNavigate();
   const [service, setService] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -101,6 +103,7 @@ export default function EnquiryForm() {
     try {
       const enquiry = await constructionApi.createEnquiry({
         serviceId: service._id || service.id,
+        budgetServiceId,
         description: form.description.trim(),
         site: {
           addressLine: form.addressLine.trim(),

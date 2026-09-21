@@ -150,3 +150,19 @@ export const MONEY_LABEL = {
   retention: "Held back until the defect period ends",
   pending: "Still to pay in",
 };
+
+/** One short line saying where a booked site visit is — text plus a badge tone. */
+export const siteVisitStatus = (r) => {
+  if (r.payment?.status === "pending") return { text: "Payment pending", tone: "bg-amber-50 text-amber-700" };
+  if (r.payment?.status === "refunded") return { text: "Refunded", tone: "bg-slate-100 text-slate-600" };
+  if (r.contract?.status === "sent") return { text: "Contract ready", tone: "bg-amber-50 text-amber-700" };
+  if (r.contract?.status === "accepted") return { text: "Contract accepted", tone: "bg-emerald-50 text-emerald-700" };
+  if (r.contract?.status === "rejected") return { text: "Contract declined", tone: "bg-slate-100 text-slate-600" };
+  switch (r.visit?.stage) {
+    case "on_the_way": return { text: "Contractor on the way", tone: "bg-blue-50 text-blue-700" };
+    case "arrived": return { text: "Visit in progress", tone: "bg-blue-50 text-blue-700" };
+    case "report_submitted": return { text: "Visit complete", tone: "bg-emerald-50 text-emerald-700" };
+    case "assigned": return { text: "Contractor assigned", tone: "bg-emerald-50 text-emerald-700" };
+    default: return { text: "Finding a contractor", tone: "bg-amber-50 text-amber-700" };
+  }
+};

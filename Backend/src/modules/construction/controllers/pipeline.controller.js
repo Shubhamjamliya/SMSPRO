@@ -290,7 +290,7 @@ export const adminGetEnquiryController = wrap(async (req, res) => {
 });
 
 export const adminEnquiryStatsController = wrap(async (req, res) => {
-  const stats = await enquiryService.getEnquiryStats();
+  const stats = await enquiryService.getEnquiryStats(req.query);
   return sendResponse(res, 200, 'Enquiry stats', { stats });
 });
 

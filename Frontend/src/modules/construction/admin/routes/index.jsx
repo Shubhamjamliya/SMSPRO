@@ -16,6 +16,13 @@ const Dashboard = React.lazy(() => import("../pages/Dashboard"));
 const PaymentControl = React.lazy(() => import("../pages/PaymentControl"));
 const Reports = React.lazy(() => import("../pages/Reports"));
 const ActivityLog = React.lazy(() => import("../pages/ActivityLog"));
+const Packages = React.lazy(() => import("../pages/Packages"));
+const Banners = React.lazy(() => import("../pages/Banners"));
+const PackageRequests = React.lazy(() => import("../pages/PackageRequests"));
+const PackageQuotations = React.lazy(() => import("../pages/PackageQuotations"));
+const BudgetServices = React.lazy(() => import("../pages/BudgetServices"));
+const Materials = React.lazy(() => import("../pages/Materials"));
+const MaterialRequests = React.lazy(() => import("../pages/MaterialRequests"));
 
 /**
  * Construction admin routes.
@@ -38,6 +45,28 @@ function ConstructionAdminRoutesInner() {
       <Route index element={<Navigate to="/admin/construction/dashboard" replace />} />
       <Route path="categories" element={<Categories />} />
       <Route path="services" element={<Services />} />
+      <Route path="banners" element={<Banners />} />
+      {/* The old single list, kept so bookmarks and older notifications still land somewhere. */}
+      <Route
+        path="package-requests"
+        element={<Navigate to="/admin/construction/end-to-end/residential/requests" replace />}
+      />
+      <Route
+        path="end-to-end/residential/requests"
+        element={<PackageRequests key="residential" segment="residential" />}
+      />
+      <Route
+        path="end-to-end/commercial/requests"
+        element={<PackageRequests key="commercial" segment="commercial" />}
+      />
+      <Route
+        path="end-to-end/residential/quotations"
+        element={<PackageQuotations key="residential" segment="residential" />}
+      />
+      <Route
+        path="end-to-end/commercial/quotations"
+        element={<PackageQuotations key="commercial" segment="commercial" />}
+      />
       <Route path="enquiries" element={<Enquiries />} />
       <Route path="projects" element={<Projects />} />
       <Route path="projects/:id" element={<ProjectDetail />} />
@@ -49,6 +78,26 @@ function ConstructionAdminRoutesInner() {
       <Route path="activity" element={<ActivityLog />} />
       <Route path="contractors" element={<Contractors />} />
       <Route path="contractors/:id" element={<ContractorDetail />} />
+      <Route
+        path="end-to-end/residential"
+        element={<Navigate to="/admin/construction/end-to-end/residential/packages" replace />}
+      />
+      <Route
+        path="end-to-end/residential/packages"
+        element={<Packages key="residential" segment="residential" />}
+      />
+      <Route
+        path="end-to-end/commercial"
+        element={<Navigate to="/admin/construction/end-to-end/commercial/packages" replace />}
+      />
+      <Route
+        path="end-to-end/commercial/packages"
+        element={<Packages key="commercial" segment="commercial" />}
+      />
+      <Route path="budget-friendly" element={<BudgetServices />} />
+      <Route path="budget-requests" element={<Enquiries key="budget" budgetOnly />} />
+      <Route path="materials" element={<Materials />} />
+      <Route path="material-requests" element={<MaterialRequests />} />
       <Route path="settings" element={<Settings />} />
       <Route path="*" element={<Navigate to="/admin/construction/dashboard" replace />} />
     </Routes>

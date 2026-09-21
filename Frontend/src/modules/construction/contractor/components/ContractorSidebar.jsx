@@ -23,6 +23,7 @@ const GROUPS = [
     items: [
       { to: "/contractor/dashboard", label: "Home", icon: Home, hint: "What needs you today" },
       { to: "/contractor/leads", label: "Enquiries", icon: Inbox, hint: "New work matched to you" },
+      { to: "/contractor/package-requests", label: "Package visits", icon: Building2, hint: "Paid site visits near you" },
       { to: "/contractor/jobs", label: "Jobs", icon: Wrench, hint: "Work you have taken on" },
       { to: "/contractor/visits", label: "Site visits", icon: CalendarClock, hint: "Scheduled and recorded" },
       { to: "/contractor/quotations", label: "Quotations", icon: FileText, hint: "Build and send quotes" },

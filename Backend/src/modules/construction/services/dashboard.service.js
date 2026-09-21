@@ -7,6 +7,8 @@ import { Quotation } from '../models/quotation.model.js';
 import { ConstructionProject } from '../models/constructionProject.model.js';
 import { ProjectStage } from '../models/projectStage.model.js';
 import { ProjectDispute } from '../models/projectDispute.model.js';
+import { PackageRequest } from '../models/packageRequest.model.js';
+import { MaterialRequest } from '../models/materialRequest.model.js';
 import { getSettings } from './settings.service.js';
 
 /**
@@ -38,7 +40,7 @@ const countBy = (rows) => rows.reduce((acc, r) => ({ ...acc, [r._id ?? 'unknown'
  * unread enquiry, because one is a customer whose funds are stuck and the other
  * is a lead that is merely going cold.
  */
-async function buildAttentionQueue(settings) {
+async function buildAttentionQueue(settings, packages, extras) {
   const now = new Date();
   const quietHours = Number(settings.matching?.leadResponseHours) || 24;
   const quietBefore = new Date(now.getTime() - quietHours * 3600000);
@@ -87,6 +89,10 @@ async function buildAttentionQueue(settings) {
 
   const frozenMoney = round2(liveDisputes.reduce((s, d) => s + (d.frozenAmount || 0), 0));
 
+  const seg = (key) => packages.segments[key];
+  const path = (key, page) => `/admin/construction/end-to-end/${key}/${page}`;
+  const nice = (key) => (key === 'commercial' ? 'Commercial' : 'Residential');
+
   const items = [
     {
       key: 'disputes',
@@ -107,6 +113,25 @@ async function buildAttentionQueue(settings) {
       detail: `Submitted more than ${staleApprovalDays} days ago — the contractor is unpaid`,
       link: '/admin/construction/projects',
     },
+    // The site visit flow: paid bookings and finished reports are customers waiting on the office.
+    ...SEGMENTS.map((key) => ({
+      key: `${key}_needs_contractor`,
+      label: `${nice(key)} visits need a contractor`,
+      count: seg(key).needsContractor,
+      severity: 'high',
+      detail: key === 'commercial'
+        ? 'Paid for — commercial visits are assigned by your team'
+        : 'Nobody accepted, or no contractor covers the area',
+      link: path(key, 'requests'),
+    })),
+    ...SEGMENTS.map((key) => ({
+      key: `${key}_to_quote`,
+      label: `${nice(key)} site reports to quote`,
+      count: seg(key).toQuote,
+      severity: 'high',
+      detail: 'The contractor has visited — the customer is waiting for a price',
+      link: path(key, 'quotations'),
+    })),
     {
       key: 'pending_contractors',
       label: 'Contractors waiting for verification',
@@ -122,6 +147,14 @@ async function buildAttentionQueue(settings) {
       severity: 'high',
       detail: 'A customer is waiting for a first response',
       link: '/admin/construction/enquiries',
+    },
+    {
+      key: 'material_requests',
+      label: 'New material quote requests',
+      count: extras.materials.new,
+      severity: 'medium',
+      detail: 'Customers are waiting for a price on materials',
+      link: '/admin/construction/material-requests',
     },
     {
       key: 'quiet_enquiries',
@@ -170,10 +203,154 @@ async function buildAttentionQueue(settings) {
   return items.filter((i) => i.count > 0);
 }
 
+const SEGMENTS = ['residential', 'commercial'];
+const KOLKATA = 'Asia/Kolkata';
+
+const zeroSegment = () => ({
+  booked: 0, inPeriod: 0, feesCollected: 0,
+  needsContractor: 0, offersOut: 0, assigned: 0, inProgress: 0,
+  reportsIn: 0, toQuote: 0,
+  quotesSent: 0, quotesSentValue: 0,
+  accepted: 0, acceptedValue: 0, declined: 0,
+});
+
+/** 1 when the condition holds, else 0 — for summing inside a $group. */
+const flag = (condition) => ({ $sum: { $cond: [condition, 1, 0] } });
+
+/**
+ * Package site visits, per segment, from booking to an accepted quotation.
+ *
+ * Only REAL bookings count: a request still waiting for its visiting fee has not been sent
+ * to anyone and is not the office's concern yet. "Needs a contractor" is the office's queue —
+ * commercial visits (never broadcast) and residential ones nobody took.
+ */
+async function getPackageStats(since) {
+  const stage = { $ifNull: ['$visit.stage', 'assigned'] };
+  const noContractor = { $eq: [{ $ifNull: ['$assignedContractorId', null] }, null] };
+  const contractStatus = { $ifNull: ['$contract.status', 'none'] };
+  const open = { $and: [{ $ne: ['$payment.status', 'refunded'] }, { $ne: ['$status', 'lost'] }] };
+
+  const [bySegment, daily] = await Promise.all([
+    PackageRequest.aggregate([
+      { $match: { status: { $ne: 'awaiting_payment' } } },
+      {
+        $group: {
+          _id: '$package.segment',
+          booked: { $sum: 1 },
+          inPeriod: flag({ $gte: ['$createdAt', since] }),
+          feesCollected: { $sum: { $cond: [{ $eq: ['$payment.status', 'paid'] }, '$payment.amount', 0] } },
+          needsContractor: flag({
+            $and: [noContractor, open, { $in: ['$dispatch.state', ['awaiting_admin', 'unassigned', 'no_contractors']] }],
+          }),
+          offersOut: flag({ $and: [noContractor, open, { $eq: ['$dispatch.state', 'sent'] }] }),
+          assigned: flag({ $not: [noContractor] }),
+          inProgress: flag({ $and: [{ $not: [noContractor] }, { $in: [stage, ['assigned', 'on_the_way', 'arrived']] }] }),
+          reportsIn: flag({ $eq: [stage, 'report_submitted'] }),
+          toQuote: flag({ $and: [{ $eq: [stage, 'report_submitted'] }, { $eq: [contractStatus, 'none'] }] }),
+          quotesSent: flag({ $eq: [contractStatus, 'sent'] }),
+          quotesSentValue: { $sum: { $cond: [{ $eq: [contractStatus, 'sent'] }, '$contract.price', 0] } },
+          accepted: flag({ $eq: [contractStatus, 'accepted'] }),
+          acceptedValue: { $sum: { $cond: [{ $eq: [contractStatus, 'accepted'] }, '$contract.price', 0] } },
+          declined: flag({ $eq: [contractStatus, 'rejected'] }),
+        },
+      },
+    ]),
+    // Bookings per day for the trend chart, in the office's own time zone.
+    PackageRequest.aggregate([
+      { $match: { status: { $ne: 'awaiting_payment' }, createdAt: { $gte: since } } },
+      {
+        $group: {
+          _id: {
+            day: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: KOLKATA } },
+            segment: '$package.segment',
+          },
+          count: { $sum: 1 },
+        },
+      },
+    ]),
+  ]);
+
+  const segments = Object.fromEntries(SEGMENTS.map((k) => [k, zeroSegment()]));
+  for (const row of bySegment) {
+    if (!segments[row._id]) continue;
+    const { _id, ...figures } = row;
+    segments[_id] = {
+      ...segments[_id],
+      ...figures,
+      feesCollected: round2(figures.feesCollected),
+      quotesSentValue: round2(figures.quotesSentValue),
+      acceptedValue: round2(figures.acceptedValue),
+    };
+  }
+
+  const sum = (key) => SEGMENTS.reduce((t, k) => t + segments[k][key], 0);
+  return {
+    segments,
+    totals: {
+      booked: sum('booked'),
+      inPeriod: sum('inPeriod'),
+      feesCollected: round2(sum('feesCollected')),
+      needsContractor: sum('needsContractor'),
+      inProgress: sum('inProgress'),
+      toQuote: sum('toQuote'),
+      quotesSent: sum('quotesSent'),
+      quotesSentValue: round2(sum('quotesSentValue')),
+      accepted: sum('accepted'),
+      acceptedValue: round2(sum('acceptedValue')),
+    },
+    daily,
+  };
+}
+
+/** One entry per day in the window (zeros included), so a quiet day is a short bar, not a gap. */
+function buildTrend(daily, days) {
+  const span = Math.min(Math.max(Number(days) || 30, 7), 90);
+  const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: KOLKATA });
+  const byDay = new Map();
+  for (const { _id, count } of daily) {
+    const entry = byDay.get(_id.day) || { residential: 0, commercial: 0 };
+    if (entry[_id.segment] !== undefined) entry[_id.segment] += count;
+    byDay.set(_id.day, entry);
+  }
+  const out = [];
+  for (let i = span - 1; i >= 0; i -= 1) {
+    const day = fmt.format(new Date(Date.now() - i * 86400000));
+    const entry = byDay.get(day) || { residential: 0, commercial: 0 };
+    out.push({ date: day, ...entry, total: entry.residential + entry.commercial });
+  }
+  return out;
+}
+
+/** Budget Friendly requests (enquiries raised from a Budget Friendly card) and material quote requests. */
+async function getBudgetAndMaterials(since) {
+  const budget = { budgetServiceId: { $ne: null }, ...alive };
+  const [budgetTotal, budgetInPeriod, budgetOpen, materialByStatus] = await Promise.all([
+    ConstructionEnquiry.countDocuments(budget),
+    ConstructionEnquiry.countDocuments({ ...budget, createdAt: { $gte: since } }),
+    ConstructionEnquiry.countDocuments({
+      ...budget,
+      status: { $nin: ['converted', 'closed_lost', 'expired', 'accepted'] },
+    }),
+    MaterialRequest.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
+  ]);
+  const materials = countBy(materialByStatus);
+  return {
+    budget: { total: budgetTotal, inPeriod: budgetInPeriod, open: budgetOpen },
+    materials: {
+      total: Object.values(materials).reduce((a, b) => a + b, 0),
+      new: materials.new || 0,
+      byStatus: materials,
+    },
+  };
+}
+
 /** BRD A1 — the dashboard payload. */
 export const getDashboard = async ({ days = 30 } = {}) => {
   const settings = await getSettings();
   const since = new Date(Date.now() - (Number(days) || 30) * 86400000);
+
+  // The attention queue needs the package and material figures, so they are gathered first.
+  const [packageStats, extras] = await Promise.all([getPackageStats(since), getBudgetAndMaterials(since)]);
 
   const [
     attention,
@@ -186,7 +363,7 @@ export const getDashboard = async ({ days = 30 } = {}) => {
     stagesDueSoon,
     topContractors,
   ] = await Promise.all([
-    buildAttentionQueue(settings),
+    buildAttentionQueue(settings, packageStats, extras),
 
     ConstructionEnquiry.aggregate([
       { $match: alive },
@@ -315,6 +492,15 @@ export const getDashboard = async ({ days = 30 } = {}) => {
     },
 
     quotations: quotes,
+
+    /** Residential and commercial site visits, from booking to an accepted quotation. */
+    packages: {
+      segments: packageStats.segments,
+      totals: packageStats.totals,
+      trend: buildTrend(packageStats.daily, days),
+    },
+    budget: extras.budget,
+    materials: extras.materials,
 
     /** BRD A1 — "stages due". */
     stagesDueSoon: stagesDueSoon.map((s) => ({

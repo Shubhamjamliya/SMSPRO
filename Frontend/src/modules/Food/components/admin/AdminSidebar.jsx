@@ -1045,7 +1045,7 @@ export default function AdminSidebar({
     },
     {
       key: "construction",
-      label: "Build",
+      label: "Construction",
       enabled: enabledModules.construction,
       visible: canAccessConstructionModule,
       active: isConstructionAdmin,
@@ -1274,7 +1274,9 @@ export default function AdminSidebar({
                       title={tab.label}
                       onClick={tab.onClick}
                       className={cn(
-                        "min-w-0 h-5 min-h-0 rounded-md px-0.5 py-0 text-[8px] font-bold uppercase leading-none tracking-wide transition-all whitespace-normal",
+                        "min-w-0 h-5 min-h-0 rounded-md px-0.5 py-0 text-[8px] font-bold uppercase leading-none transition-all whitespace-normal",
+                        // A long label such as "Construction" needs tighter spacing to fit its third of the row.
+                        tab.label.length > 8 ? "tracking-tighter" : "tracking-wide",
                         tab.active
                           ? cn("text-white shadow-[0_3px_8px_rgba(0,0,0,0.25)]", moduleTabColors[tab.key] || "bg-gray-600")
                           : "text-gray-300 hover:text-white hover:bg-white/10",

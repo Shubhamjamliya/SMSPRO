@@ -16,6 +16,72 @@ const constructionApi = {
     return unwrap(response)?.categories || [];
   },
 
+  /**
+   * Books a package. Sends WHICH package and the site details only — the server works
+   * out the price, the estimate and the visiting fee. Resolves to `{ request, razorpay }`:
+   * `razorpay` is the checkout to open when the plan has a visiting fee (the request is
+   * held back until it is paid), and null when the visit is free.
+   */
+  createPackageRequest: async (body) =>
+    unwrap(await axiosInstance.post('/construction/package-requests', body)),
+
+  /** Re-open the checkout for a booking that was saved but not paid for. */
+  getPackageRequestPayment: async (id) =>
+    unwrap(await axiosInstance.post(`/construction/package-requests/${id}/payment`)),
+
+  /** After Razorpay checkout: the server verifies the payment, then sends the request to contractors. */
+  verifyPackageRequestPayment: async (id, body) =>
+    unwrap(await axiosInstance.post(`/construction/package-requests/${id}/verify-payment`, body))?.request,
+
+  // ---------- Following a booked site visit ----------
+  listMySiteVisits: async () =>
+    unwrap(await axiosInstance.get('/construction/package-requests'))?.requests || [],
+  getMySiteVisit: async (id) =>
+    unwrap(await axiosInstance.get(`/construction/package-requests/${id}`))?.request,
+  /** A fresh visit OTP — for when it was lost or the contractor used up their attempts. */
+  regenerateVisitOtp: async (id) =>
+    unwrap(await axiosInstance.post(`/construction/package-requests/${id}/visit-otp`))?.request,
+  acceptSiteVisitContract: async (id, note = '') =>
+    unwrap(await axiosInstance.post(`/construction/package-requests/${id}/contract/accept`, { note }))?.request,
+  declineSiteVisitContract: async (id, note = '') =>
+    unwrap(await axiosInstance.post(`/construction/package-requests/${id}/contract/decline`, { note }))?.request,
+
+  /** Home screen banners that are live right now (the server applies the schedule). */
+  getBanners: async () => {
+    const response = await axiosInstance.get('/construction/banners');
+    return unwrap(response)?.banners || [];
+  },
+
+  /**
+   * Budget Friendly offerings, active only. Each has `enquiryServiceKey` when it
+   * is linked to a live catalogue service — that is what makes it enquirable.
+   */
+  getBudgetServices: async () => {
+    const response = await axiosInstance.get('/construction/budget-services');
+    return unwrap(response)?.services || [];
+  },
+
+  /** Materials on sale, active ones only. Prices are list rates. */
+  getMaterials: async () => {
+    const response = await axiosInstance.get('/construction/materials');
+    return unwrap(response)?.materials || [];
+  },
+
+  /**
+   * Asks for a quote on a basket of materials. Only ids and quantities are
+   * trusted — the server looks up names and prices itself.
+   */
+  createMaterialRequest: async (body) =>
+    unwrap(await axiosInstance.post('/construction/material-requests', body))?.request,
+
+  /** Admin-managed Residential / Commercial packages. Active ones only. */
+  getPackages: async (segment) => {
+    const response = await axiosInstance.get('/construction/packages', {
+      params: segment ? { segment } : {},
+    });
+    return unwrap(response)?.packages || [];
+  },
+
   /** C2 — one service: what it covers, how long it takes, what to expect. */
   getServiceDetail: async (idOrSlug) => {
     const response = await axiosInstance.get(`/construction/services/${idOrSlug}`);

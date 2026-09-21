@@ -59,7 +59,7 @@ const DeveloperToggles = () => {
 
   const resetOperationalData = async () => {
     const confirmed = window.confirm(
-      "This will permanently delete orders, bookings, payments, and transaction records only. Users, products, wallets, settings, and admins will remain. Continue?",
+      "This will permanently delete orders, bookings, construction site-visit requests, payments, and transaction records only. Users, products, wallets, settings, and admins will remain. Continue?",
     );
     if (!confirmed) return;
 
@@ -159,7 +159,7 @@ const DeveloperToggles = () => {
           <div className="flex items-start justify-between gap-4 border-b border-red-100 px-4 py-3 sm:px-5">
             <div>
               <h2 className="text-sm font-semibold text-red-700">Reset operational data</h2>
-              <p className="mt-1 text-xs text-gray-500">Delete orders, bookings, payments, settlements, refunds, and transaction records only.</p>
+              <p className="mt-1 text-xs text-gray-500">Delete orders, bookings, construction site-visit requests, payments, settlements, refunds, and transaction records only.</p>
             </div>
             <Trash2 size={17} className="mt-0.5 shrink-0 text-red-500" />
           </div>

@@ -20,6 +20,69 @@ import {
   getCustomerServiceDetailController,
 } from '../controllers/catalog.controller.js';
 import {
+  listPackagesController,
+  createPackageController,
+  updatePackageController,
+  updatePackageStatusController,
+  deletePackageController,
+  seedDefaultPackagesController,
+  getCustomerPackagesController,
+} from '../controllers/package.controller.js';
+import {
+  createPackageRequestController,
+  getPackageRequestPaymentController,
+  verifyPackageRequestPaymentController,
+  listContractorPackageRequestsController,
+  acceptPackageRequestController,
+  declinePackageRequestController,
+  listPackageRequestsController,
+  updatePackageRequestStatusController,
+  redispatchPackageRequestController,
+  listAssignableContractorsController,
+  assignPackageRequestController,
+  refundPackageRequestController,
+  getContractorPackageRequestController,
+  listContractorAssignedVisitsController,
+  listContractorNotificationsController,
+  markContractorNotificationsReadController,
+  startJourneyController,
+  confirmArrivalController,
+  saveVisitReportController,
+  listMyPackageRequestsController,
+  getMyPackageRequestController,
+  regenerateVisitOtpController,
+  acceptContractController,
+  declineContractController,
+  sendPackageContractController,
+} from '../controllers/packageRequest.controller.js';
+import {
+  listBannersController,
+  createBannerController,
+  updateBannerController,
+  updateBannerStatusController,
+  deleteBannerController,
+  getCustomerBannersController,
+} from '../controllers/banner.controller.js';
+import {
+  listBudgetServicesController,
+  createBudgetServiceController,
+  updateBudgetServiceController,
+  updateBudgetServiceStatusController,
+  deleteBudgetServiceController,
+  getCustomerBudgetServicesController,
+} from '../controllers/budgetService.controller.js';
+import {
+  listMaterialsController,
+  createMaterialController,
+  updateMaterialController,
+  updateMaterialStatusController,
+  deleteMaterialController,
+  listMaterialRequestsController,
+  updateMaterialRequestStatusController,
+  getCustomerMaterialsController,
+  createMaterialRequestController,
+} from '../controllers/material.controller.js';
+import {
   getSettingsController,
   updateSettingsController,
   getPublicSettingsController,
@@ -264,6 +327,35 @@ const contractorLiveAuth = [
 router.get('/services', ...customerAuth, getCustomerCatalogueController);
 router.get('/services/:idOrSlug', ...customerAuth, getCustomerServiceDetailController);
 router.get('/settings', ...customerAuth, getPublicSettingsController);
+router.get('/packages', ...customerAuth, getCustomerPackagesController);
+router.post('/package-requests', ...customerAuth, createPackageRequestController);
+router.post('/package-requests/:id/payment', ...customerAuth, getPackageRequestPaymentController);
+router.post('/package-requests/:id/verify-payment', ...customerAuth, verifyPackageRequestPaymentController);
+
+// Contractors: the site-visit requests sent to them, and taking or declining one.
+router.get('/contractor/package-requests', ...contractorAuth, listContractorPackageRequestsController);
+router.post('/contractor/package-requests/:id/accept', ...contractorAuth, acceptPackageRequestController);
+router.post('/contractor/package-requests/:id/decline', ...contractorAuth, declinePackageRequestController);
+// The bell in the contractor's header: recent notifications and marking them read.
+router.get('/contractor/notifications', ...contractorAuth, listContractorNotificationsController);
+router.post('/contractor/notifications/read', ...contractorAuth, markContractorNotificationsReadController);
+// The booking page: start the journey, confirm arrival with the customer's OTP, send the report.
+router.get('/contractor/package-visits', ...contractorAuth, listContractorAssignedVisitsController);
+router.get('/contractor/package-requests/:id', ...contractorAuth, getContractorPackageRequestController);
+router.post('/contractor/package-requests/:id/start-journey', ...contractorAuth, startJourneyController);
+router.post('/contractor/package-requests/:id/verify-otp', ...contractorAuth, confirmArrivalController);
+router.put('/contractor/package-requests/:id/report', ...contractorAuth, saveVisitReportController);
+
+// Customers following their booking: contractor, OTP, and the contract to accept.
+router.get('/package-requests', ...customerAuth, listMyPackageRequestsController);
+router.get('/package-requests/:id', ...customerAuth, getMyPackageRequestController);
+router.post('/package-requests/:id/visit-otp', ...customerAuth, regenerateVisitOtpController);
+router.post('/package-requests/:id/contract/accept', ...customerAuth, acceptContractController);
+router.post('/package-requests/:id/contract/decline', ...customerAuth, declineContractController);
+router.get('/banners', ...customerAuth, getCustomerBannersController);
+router.get('/budget-services', ...customerAuth, getCustomerBudgetServicesController);
+router.get('/materials', ...customerAuth, getCustomerMaterialsController);
+router.post('/material-requests', ...customerAuth, createMaterialRequestController);
 
 // ---------- Admin: categories (BRD A8) ----------
 
@@ -343,6 +435,232 @@ router.delete(
   checkPermission('construction::settings', 'delete'),
   requireModuleEnabled,
   deleteServiceController,
+);
+
+// ---------- Admin: residential and commercial packages ----------
+// Same permission as the rest of the catalogue: these are what the customer app
+// shows before anyone enquires, so they are managed alongside categories and services.
+
+router.get(
+  '/admin/packages',
+  ...adminAuth,
+  checkPermission('construction::settings', 'view'),
+  listPackagesController,
+);
+router.post(
+  '/admin/packages',
+  ...adminAuth,
+  checkPermission('construction::settings', 'create'),
+  requireModuleEnabled,
+  createPackageController,
+);
+router.post(
+  '/admin/packages/seed-defaults',
+  ...adminAuth,
+  checkPermission('construction::settings', 'create'),
+  requireModuleEnabled,
+  seedDefaultPackagesController,
+);
+router.patch(
+  '/admin/packages/:id',
+  ...adminAuth,
+  checkPermission('construction::settings', 'edit'),
+  requireModuleEnabled,
+  updatePackageController,
+);
+router.patch(
+  '/admin/packages/:id/status',
+  ...adminAuth,
+  checkPermission('construction::settings', 'edit'),
+  requireModuleEnabled,
+  updatePackageStatusController,
+);
+router.delete(
+  '/admin/packages/:id',
+  ...adminAuth,
+  checkPermission('construction::settings', 'delete'),
+  requireModuleEnabled,
+  deletePackageController,
+);
+
+// ---------- Admin: package requests (customers selecting a package) ----------
+// Handled from the End to End section, under the same permission as its packages.
+
+router.get(
+  '/admin/package-requests',
+  ...adminAuth,
+  checkPermission('construction::settings', 'view'),
+  listPackageRequestsController,
+);
+router.patch(
+  '/admin/package-requests/:id/status',
+  ...adminAuth,
+  checkPermission('construction::settings', 'edit'),
+  requireModuleEnabled,
+  updatePackageRequestStatusController,
+);
+router.post(
+  '/admin/package-requests/:id/redispatch',
+  ...adminAuth,
+  checkPermission('construction::settings', 'edit'),
+  requireModuleEnabled,
+  redispatchPackageRequestController,
+);
+// The office picks the contractor: every commercial visit, and any residential one nobody accepted.
+router.get(
+  '/admin/package-requests/:id/contractors',
+  ...adminAuth,
+  checkPermission('construction::settings', 'view'),
+  listAssignableContractorsController,
+);
+router.post(
+  '/admin/package-requests/:id/assign',
+  ...adminAuth,
+  checkPermission('construction::settings', 'edit'),
+  requireModuleEnabled,
+  assignPackageRequestController,
+);
+// Once the contractor's site visit report is in, the office sends the customer a price and terms.
+router.post(
+  '/admin/package-requests/:id/contract',
+  ...adminAuth,
+  checkPermission('construction::settings', 'edit'),
+  requireModuleEnabled,
+  sendPackageContractController,
+);
+// Giving money back sits behind the payments permission, like every other money action here.
+router.post(
+  '/admin/package-requests/:id/refund',
+  ...adminAuth,
+  checkPermission('construction::payments', 'edit'),
+  refundPackageRequestController,
+);
+
+// ---------- Admin: home screen banners ----------
+// Managed from the Catalogue section, so they share its permission.
+
+router.get(
+  '/admin/banners',
+  ...adminAuth,
+  checkPermission('construction::settings', 'view'),
+  listBannersController,
+);
+router.post(
+  '/admin/banners',
+  ...adminAuth,
+  checkPermission('construction::settings', 'create'),
+  requireModuleEnabled,
+  createBannerController,
+);
+router.patch(
+  '/admin/banners/:id',
+  ...adminAuth,
+  checkPermission('construction::settings', 'edit'),
+  requireModuleEnabled,
+  updateBannerController,
+);
+router.patch(
+  '/admin/banners/:id/status',
+  ...adminAuth,
+  checkPermission('construction::settings', 'edit'),
+  requireModuleEnabled,
+  updateBannerStatusController,
+);
+router.delete(
+  '/admin/banners/:id',
+  ...adminAuth,
+  checkPermission('construction::settings', 'delete'),
+  requireModuleEnabled,
+  deleteBannerController,
+);
+
+// ---------- Admin: budget friendly services ----------
+// Same catalogue permission as the rest of these sidebar sections.
+
+router.get(
+  '/admin/budget-services',
+  ...adminAuth,
+  checkPermission('construction::settings', 'view'),
+  listBudgetServicesController,
+);
+router.post(
+  '/admin/budget-services',
+  ...adminAuth,
+  checkPermission('construction::settings', 'create'),
+  requireModuleEnabled,
+  createBudgetServiceController,
+);
+router.patch(
+  '/admin/budget-services/:id',
+  ...adminAuth,
+  checkPermission('construction::settings', 'edit'),
+  requireModuleEnabled,
+  updateBudgetServiceController,
+);
+router.patch(
+  '/admin/budget-services/:id/status',
+  ...adminAuth,
+  checkPermission('construction::settings', 'edit'),
+  requireModuleEnabled,
+  updateBudgetServiceStatusController,
+);
+router.delete(
+  '/admin/budget-services/:id',
+  ...adminAuth,
+  checkPermission('construction::settings', 'delete'),
+  requireModuleEnabled,
+  deleteBudgetServiceController,
+);
+
+// ---------- Admin: materials and material quote requests ----------
+// Under the same catalogue permission as everything else in these sidebar sections.
+
+router.get(
+  '/admin/materials',
+  ...adminAuth,
+  checkPermission('construction::settings', 'view'),
+  listMaterialsController,
+);
+router.post(
+  '/admin/materials',
+  ...adminAuth,
+  checkPermission('construction::settings', 'create'),
+  requireModuleEnabled,
+  createMaterialController,
+);
+router.patch(
+  '/admin/materials/:id',
+  ...adminAuth,
+  checkPermission('construction::settings', 'edit'),
+  requireModuleEnabled,
+  updateMaterialController,
+);
+router.patch(
+  '/admin/materials/:id/status',
+  ...adminAuth,
+  checkPermission('construction::settings', 'edit'),
+  requireModuleEnabled,
+  updateMaterialStatusController,
+);
+router.delete(
+  '/admin/materials/:id',
+  ...adminAuth,
+  checkPermission('construction::settings', 'delete'),
+  requireModuleEnabled,
+  deleteMaterialController,
+);
+router.get(
+  '/admin/material-requests',
+  ...adminAuth,
+  checkPermission('construction::settings', 'view'),
+  listMaterialRequestsController,
+);
+router.patch(
+  '/admin/material-requests/:id/status',
+  ...adminAuth,
+  checkPermission('construction::settings', 'edit'),
+  requireModuleEnabled,
+  updateMaterialRequestStatusController,
 );
 
 // ---------- Admin: module settings (§7 of the blueprint) ----------

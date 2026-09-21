@@ -16,6 +16,7 @@ import ModuleSelectionScreen from '@/modules/common/pages/ModuleSelectionScreen'
 import { useEnabledModules } from '@/modules/common/hooks/useEnabledModules'
 import { getFirstEnabledModulePath } from '@/modules/common/utils/enabledModules'
 import { registerWebPushForCurrentModule } from '@food/utils/firebaseMessaging'
+import { SERVICE_TYPE_ROUTES, SELECT_PACKAGE_PATH } from '../modules/construction/user/serviceTypes'
 import { hasServiceProviderSession } from '@/modules/serviceProvider/provider/utils/authServiceProvider'
 
 const NATIVE_LAST_ROUTE_KEY = 'native_last_route'
@@ -34,6 +35,7 @@ const ServiceProviderBookServicePage = lazy(() => import('../modules/serviceProv
 const ServiceProviderRequestStatusPage = lazy(() => import('../modules/serviceProvider/user/pages/RequestStatus'))
 const ServiceProviderMyBookingsPage = lazy(() => import('../modules/serviceProvider/user/pages/MyBookings'))
 const ConstructionHome = lazy(() => import('../modules/construction/user/pages/Home'))
+const ConstructionRequirementBuilder = lazy(() => import('../modules/construction/user/pages/RequirementBuilder'))
 const ConstructionMyQuotes = lazy(() => import('../modules/construction/user/pages/MyQuotes'))
 const ConstructionContractors = lazy(() => import('../modules/construction/user/pages/Contractors'))
 const ConstructionContractorProfile = lazy(() => import('../modules/construction/user/pages/ContractorProfile'))
@@ -41,6 +43,9 @@ const ConstructionServiceDetail = lazy(() => import('../modules/construction/use
 const ConstructionEnquiryForm = lazy(() => import('../modules/construction/user/pages/EnquiryForm'))
 const ConstructionMyEnquiries = lazy(() => import('../modules/construction/user/pages/MyEnquiries'))
 const ConstructionEnquiryDetail = lazy(() => import('../modules/construction/user/pages/EnquiryDetail'))
+const ConstructionMySiteVisits = lazy(() => import('../modules/construction/user/pages/MySiteVisits'))
+const ConstructionSiteVisitDetail = lazy(() => import('../modules/construction/user/pages/SiteVisitDetail'))
+const ConstructionSiteQuotationDetail = lazy(() => import('../modules/construction/user/pages/SiteQuotationDetail'))
 const ConstructionQuotationView = lazy(() => import('../modules/construction/user/pages/QuotationView'))
 const ConstructionCompareQuotes = lazy(() => import('../modules/construction/user/pages/CompareQuotes'))
 const ConstructionMyProjects = lazy(() => import('../modules/construction/user/pages/MyProjects'))
@@ -332,6 +337,32 @@ const AppRoutes = () => {
                 </ModuleAccessGuard>
               }
             />
+            {/* The three sections of the construction home screen each have their own
+                address, so a section can be linked to, refreshed, and left with the back
+                button. They render the same screen as /construction, told which one to open. */}
+            {SERVICE_TYPE_ROUTES.map(({ id, path }) => (
+              <Route
+                key={id}
+                path={path}
+                element={
+                  <ModuleAccessGuard moduleKey="construction">
+                    <ProtectedRoute requiredRole="user" loginPath="/user/auth/login">
+                      <ConstructionHome serviceType={id} />
+                    </ProtectedRoute>
+                  </ModuleAccessGuard>
+                }
+              />
+            ))}
+            <Route
+              path={`${SELECT_PACKAGE_PATH}/:packageId?`}
+              element={
+                <ModuleAccessGuard moduleKey="construction">
+                  <ProtectedRoute requiredRole="user" loginPath="/user/auth/login">
+                    <ConstructionRequirementBuilder />
+                  </ProtectedRoute>
+                </ModuleAccessGuard>
+              }
+            />
             <Route
               path="/construction/services/:idOrSlug"
               element={
@@ -358,6 +389,36 @@ const AppRoutes = () => {
                 <ModuleAccessGuard moduleKey="construction">
                   <ProtectedRoute requiredRole="user" loginPath="/user/auth/login">
                     <ConstructionMyEnquiries />
+                  </ProtectedRoute>
+                </ModuleAccessGuard>
+              }
+            />
+            <Route
+              path="/construction/site-visits"
+              element={
+                <ModuleAccessGuard moduleKey="construction">
+                  <ProtectedRoute requiredRole="user" loginPath="/user/auth/login">
+                    <ConstructionMySiteVisits />
+                  </ProtectedRoute>
+                </ModuleAccessGuard>
+              }
+            />
+            <Route
+              path="/construction/quotations/visit/:id"
+              element={
+                <ModuleAccessGuard moduleKey="construction">
+                  <ProtectedRoute requiredRole="user" loginPath="/user/auth/login">
+                    <ConstructionSiteQuotationDetail />
+                  </ProtectedRoute>
+                </ModuleAccessGuard>
+              }
+            />
+            <Route
+              path="/construction/site-visits/:id"
+              element={
+                <ModuleAccessGuard moduleKey="construction">
+                  <ProtectedRoute requiredRole="user" loginPath="/user/auth/login">
+                    <ConstructionSiteVisitDetail />
                   </ProtectedRoute>
                 </ModuleAccessGuard>
               }

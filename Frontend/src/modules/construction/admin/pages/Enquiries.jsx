@@ -59,7 +59,7 @@ function StatTile({ label, value, tone = "default", onClick, active }) {
  *
  * The gone-quiet filter is therefore a first-class control, not a hidden option.
  */
-export default function Enquiries() {
+export default function Enquiries({ budgetOnly = false }) {
   const [rows, setRows] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -78,12 +78,13 @@ export default function Enquiries() {
       const [list, s] = await Promise.all([
         constructionAdminApi.getEnquiries({
           status: status || undefined,
+          budget: budgetOnly ? "true" : undefined,
           city: search.trim() || undefined,
           stale: staleOnly ? "true" : undefined,
           page,
           limit: 20,
         }),
-        constructionAdminApi.getEnquiryStats().catch(() => null),
+        constructionAdminApi.getEnquiryStats(budgetOnly ? { budget: "true" } : {}).catch(() => null),
       ]);
       setRows(list.rows);
       setMeta(list.meta);
@@ -93,7 +94,7 @@ export default function Enquiries() {
     } finally {
       setLoading(false);
     }
-  }, [status, search, staleOnly, page]);
+  }, [status, search, staleOnly, page, budgetOnly]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setPage(1); }, [status, search, staleOnly]);
@@ -135,6 +136,9 @@ export default function Enquiries() {
           <p className="truncate font-semibold text-gray-900">
             {row.serviceId?.name || "Construction work"}
           </p>
+          {row.budgetServiceId?.name ? (
+            <p className="truncate text-xs font-medium text-emerald-700">Budget: {row.budgetServiceId.name}</p>
+          ) : null}
           <p className="truncate font-mono text-[11px] text-gray-400">{row.enquiryNumber}</p>
           <p className="truncate text-xs text-gray-500">
             {row.customerId?.name || "Customer"}
@@ -246,9 +250,13 @@ export default function Enquiries() {
   return (
     <div className={CN_ADMIN_PAGE_CLASS}>
       <PageHeader
-        eyebrow="Construction"
-        title="Enquiry pipeline"
-        description="Every enquiry and where it has reached. Enquiries that have gone quiet are highlighted — most lost work is lost to simple neglect."
+        eyebrow={budgetOnly ? "Construction · Budget Friendly" : "Construction"}
+        title={budgetOnly ? "Budget Friendly Requests" : "Enquiry pipeline"}
+        description={
+          budgetOnly
+            ? "Requests customers raised from a Budget Friendly card, and where each has reached. Ones that have gone quiet are highlighted."
+            : "Every enquiry and where it has reached. Enquiries that have gone quiet are highlighted — most lost work is lost to simple neglect."
+        }
       />
 
       {stats ? (

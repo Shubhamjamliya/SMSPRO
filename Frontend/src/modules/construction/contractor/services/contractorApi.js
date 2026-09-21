@@ -38,6 +38,38 @@ const contractorApi = {
   leadStats: async () => unwrap(await axiosInstance.get(`${BASE}/leads/stats`))?.stats,
   acceptLead: async (id) => unwrap(await axiosInstance.patch(`${BASE}/leads/${id}/accept`))?.lead,
   declineLead: async (id, body) => unwrap(await axiosInstance.patch(`${BASE}/leads/${id}/decline`, body))?.lead,
+
+  // ---------- Package site-visit requests (paid by the customer, sent to nearby contractors) ----------
+  listPackageRequests: async (params = {}) => {
+    const data = unwrap(await axiosInstance.get(`${BASE}/package-requests`, { params }));
+    return { rows: data?.data || [], meta: data?.meta || { total: 0, page: 1, totalPages: 1 } };
+  },
+  /** First contractor to accept gets the request; anyone later is told it is taken. */
+  acceptPackageRequest: async (id) => unwrap(await axiosInstance.post(`${BASE}/package-requests/${id}/accept`))?.request,
+  declinePackageRequest: async (id, body) => unwrap(await axiosInstance.post(`${BASE}/package-requests/${id}/decline`, body)),
+
+  // ---------- Notification bell ----------
+  /** Recent notifications and the unread count: `{ unread, notifications }`. */
+  getNotifications: async () => unwrap(await axiosInstance.get(`${BASE}/notifications`)),
+  /** Mark one read with an id, or all of them with none. Answers with the fresh inbox. */
+  markNotificationsRead: async (id) =>
+    unwrap(await axiosInstance.post(`${BASE}/notifications/read`, id ? { id } : {})),
+
+  /** Every package site visit assigned to this contractor, in progress or done, with the full record. */
+  listPackageVisits: async () => unwrap(await axiosInstance.get(`${BASE}/package-visits`))?.visits || [],
+
+  // The booking page: one request, and the site visit that follows.
+  getPackageRequest: async (id) => unwrap(await axiosInstance.get(`${BASE}/package-requests/${id}`))?.request,
+  /** "Start journey" — tells the customer the contractor is on the way and gives them the OTP. */
+  startJourney: async (id, location) =>
+    unwrap(await axiosInstance.post(`${BASE}/package-requests/${id}/start-journey`, { location }))?.request,
+  /** The customer reads the OTP out on site; the contractor types it in. */
+  confirmArrival: async (id, otp, location) =>
+    unwrap(await axiosInstance.post(`${BASE}/package-requests/${id}/verify-otp`, { otp, location }))?.request,
+  /** Save the site visit report as a draft, or send it to the office with `submit: true`. */
+  saveVisitReport: async (id, report, submit = false) =>
+    unwrap(await axiosInstance.put(`${BASE}/package-requests/${id}/report`, { report, submit }))?.request,
+
   listJobs: async (params = {}) => {
     const data = unwrap(await axiosInstance.get(`${BASE}/jobs`, { params }));
     return { rows: data?.data || [], meta: data?.meta || { total: 0, page: 1, totalPages: 1 } };

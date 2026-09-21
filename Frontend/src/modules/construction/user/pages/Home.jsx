@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
@@ -15,256 +15,213 @@ import {
   Receipt,
   FileText,
   CheckCircle2,
-  Crown,
-  Award,
   ArrowRight,
   Layers,
   Check,
-  Wrench,
   ChevronDown,
 } from "lucide-react";
 import { useLocation as useAppLocation } from "@food/hooks/useLocation";
 import { useLocationSelector } from "@food/components/user/UserLayout";
 import constructionApi from "../services/api";
 import { ConstructionPageShell } from "../components/ui";
+import MaterialsSection from "../components/MaterialsSection";
+import BannerCarousel from "../components/BannerCarousel";
+import { CONSTRUCTION_HOME_PATH, pathForServiceType, selectPackagePath } from "../serviceTypes";
 import { fullMoney, PROJECT_STATUS_LABEL } from "../../shared/format";
+import { toDisplayPackage } from "../../shared/packageTheme";
 import useModuleBackHandler from "@/modules/common/hooks/useModuleBackHandler";
 
-// ── Residential Packages (Light Theme) ──────────────────────────────────────
-const RESIDENTIAL_PACKAGES = [
-  {
-    id: "silver",
-    name: "Silver Package",
-    tagline: "Essential Construction",
-    price: "₹1,650",
-    unit: "per sq.ft",
-    badge: "Standard",
-    badgeColor: "bg-slate-100 text-slate-700 border-slate-300 font-bold",
-    cardBg: "bg-gradient-to-b from-slate-50/80 via-white to-slate-50/40 border-slate-200/90 hover:border-slate-400",
-    priceBg: "bg-slate-50 border-slate-200 text-slate-900",
-    iconBg: "bg-slate-100 text-slate-700",
-    btnStyle: "bg-slate-900 text-white hover:bg-slate-800",
-    checkColor: "text-slate-600",
-    icon: ShieldCheck,
-    features: [
-      "Ultratech / TATA TMT Steel Grade A",
-      "Double Charged Vitrified Tiles (2x2 ft)",
-      "Flush Main Door & Internal Doors",
-      "Standard Electrical (Anchor / Cello)",
-      "Essential Plumbing Fittings (Cera)",
-      "10-Year Structural Warranty",
-    ],
-  },
-  {
-    id: "gold",
-    name: "Gold Package",
-    tagline: "Premium Quality & Finish",
-    price: "₹1,950",
-    unit: "per sq.ft",
-    badge: "★ Most Popular",
-    badgeColor: "bg-amber-500 text-slate-950 font-black shadow-sm",
-    cardBg: "bg-gradient-to-b from-amber-50/80 via-white to-orange-50/30 border-amber-300 shadow-lg shadow-amber-500/10 ring-2 ring-amber-400/40 hover:border-amber-500",
-    priceBg: "bg-amber-50/80 border-amber-200 text-amber-900",
-    iconBg: "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20",
-    btnStyle: "bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black hover:bg-amber-400 shadow-md shadow-amber-500/20",
-    checkColor: "text-amber-500",
-    popular: true,
-    icon: Crown,
-    features: [
-      "Premium Cement & TATA Tiscon TMT Steel",
-      "Double Charged Vitrified Tiles (4x2 ft)",
-      "Teak Wood Main Door Frame & Shutter",
-      "Jaquar / Cera Premium Bath Fittings",
-      "Full Modular Kitchen Setup",
-      "3D Architectural & Floor Plan Elevation",
-      "15-Year Structural Warranty",
-    ],
-  },
-  {
-    id: "diamond",
-    name: "Diamond Package",
-    tagline: "Luxury Living Standards",
-    price: "₹2,450",
-    unit: "per sq.ft",
-    badge: "Luxury",
-    badgeColor: "bg-cyan-500 text-white font-bold",
-    cardBg: "bg-gradient-to-b from-cyan-50/80 via-white to-blue-50/30 border-cyan-200/90 hover:border-cyan-400",
-    priceBg: "bg-cyan-50/80 border-cyan-200 text-cyan-900",
-    iconBg: "bg-cyan-500 text-white shadow-md shadow-cyan-500/20",
-    btnStyle: "bg-cyan-600 text-white hover:bg-cyan-500 font-extrabold",
-    checkColor: "text-cyan-600",
-    icon: Sparkles,
-    features: [
-      "Grade A+ TMT Steel & Waterproof Concrete",
-      "Italian Marble Flooring in Living Room",
-      "Teak Wood Doors & Soundproof Windows",
-      "Kohler / Grohe Designer Sanitary Ware",
-      "Designer False Ceiling & Cove Lighting",
-      "Solar Water Heating Provisions",
-      "20-Year Structural Warranty",
-    ],
-  },
-  {
-    id: "platinum",
-    name: "Platinum Package",
-    tagline: "Bespoke Royal Architecture",
-    price: "₹2,950",
-    unit: "per sq.ft",
-    badge: "Elite Architectural",
-    badgeColor: "bg-purple-600 text-white font-bold",
-    cardBg: "bg-gradient-to-b from-purple-50/80 via-white to-indigo-50/30 border-purple-200/90 hover:border-purple-400",
-    priceBg: "bg-purple-50/80 border-purple-200 text-purple-900",
-    iconBg: "bg-purple-600 text-white shadow-md shadow-purple-600/20",
-    btnStyle: "bg-purple-600 text-white hover:bg-purple-500 font-extrabold",
-    checkColor: "text-purple-600",
-    icon: Award,
-    features: [
-      "Imported Italian Marble & Hardwood Flooring",
-      "Smart Home Automation & Keyless Locks",
-      "Fully Loaded German Modular Kitchen",
-      "VRV Central Air Conditioning Infrastructure",
-      "Custom Landscaping & Private Terrace Garden",
-      "Dedicated Senior Architect & Site Manager",
-      "Lifetime Structural Warranty",
-    ],
-  },
-];
+/** Shown in place of the package cards while they load, or when admin has added none. */
+function PackagesEmpty({ loading, label }) {
+  return (
+    <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-xs">
+      <Building2 className="mx-auto h-10 w-10 text-slate-300 mb-2" />
+      <p className="text-sm font-bold text-slate-800">
+        {loading ? "Loading packages…" : `No ${label} packages are available right now`}
+      </p>
+      {!loading && (
+        <p className="text-xs text-slate-500 mt-1">
+          Please check back soon, or send us an enquiry and we will help you directly.
+        </p>
+      )}
+    </div>
+  );
+}
 
-// ── Commercial Services (Light Theme) ───────────────────────────────────────
-const COMMERCIAL_SERVICES = [
-  {
-    id: "comm-office",
-    name: "Corporate Office Fitouts",
-    tagline: "Modern Workspaces & Cabin Layouts",
-    price: "₹1,200",
-    unit: "per sq.ft",
-    badge: "Office",
-    icon: Building2,
-    badgeColor: "bg-blue-100 text-blue-800 border-blue-200",
-    cardBg: "bg-gradient-to-b from-blue-50/60 via-white to-slate-50/30 border-blue-200 hover:border-blue-400",
-    btnStyle: "bg-blue-600 text-white hover:bg-blue-500 font-extrabold",
-    description: "Turnkey office interiors, acoustic glass partitions, workstation wiring, HVAC & reception counters.",
-  },
-  {
-    id: "comm-retail",
-    name: "Retail Showrooms & Outlets",
-    tagline: "High-Footfall Brand Outlets",
-    price: "₹1,450",
-    unit: "per sq.ft",
-    badge: "Retail",
-    icon: Sparkles,
-    badgeColor: "bg-emerald-100 text-emerald-800 border-emerald-200",
-    cardBg: "bg-gradient-to-b from-emerald-50/60 via-white to-slate-50/30 border-emerald-200 hover:border-emerald-400",
-    btnStyle: "bg-emerald-600 text-white hover:bg-emerald-500 font-extrabold",
-    description: "High-impact store facades, display shelving, spot lighting, security systems & POS counter setups.",
-  },
-  {
-    id: "comm-building",
-    name: "Commercial Turnkey Building",
-    tagline: "Multi-Storey Commercial Complexes",
-    price: "₹1,850",
-    unit: "per sq.ft",
-    badge: "Turnkey",
-    icon: HardHat,
-    badgeColor: "bg-amber-100 text-amber-900 border-amber-200",
-    cardBg: "bg-gradient-to-b from-amber-50/60 via-white to-slate-50/30 border-amber-200 hover:border-amber-400",
-    btnStyle: "bg-amber-500 text-slate-950 hover:bg-amber-400 font-black",
-    description: "Full RCC structure, glass curtain walling, elevator shafts, parking basements & fire compliance.",
-  },
-  {
-    id: "comm-warehouse",
-    name: "Warehouses & Industrial Sheds",
-    tagline: "PEB Sheds & Heavy Logistics",
-    price: "₹1,100",
-    unit: "per sq.ft",
-    badge: "Industrial",
-    icon: Layers,
-    badgeColor: "bg-slate-100 text-slate-800 border-slate-300",
-    cardBg: "bg-gradient-to-b from-slate-50/80 via-white to-slate-50/30 border-slate-200 hover:border-slate-400",
-    btnStyle: "bg-slate-900 text-white hover:bg-slate-800 font-extrabold",
-    description: "Pre-Engineered Building (PEB) steel structures, heavy load flooring, loading docks & ventilation.",
-  },
-];
+/**
+ * The Budget Friendly section. These come from their own admin-managed list, not
+ * the general catalogue. A card is only actionable when admin has linked it to a
+ * live catalogue service (`enquiryServiceKey`) — that service's page is where the
+ * enquiry form lives. Otherwise it is shown for information and says nothing about
+ * enquiring, rather than offering a button that leads nowhere.
+ */
+function BudgetFriendlyServices({ services, loading, searching, onEnquire, onConsult }) {
+  if (loading) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="h-64 animate-pulse rounded-3xl bg-slate-200/70" />
+        ))}
+      </div>
+    );
+  }
 
-// ── Residential Custom Addon Services ─────────────────────────────────────────
-const RESIDENTIAL_ADDONS = [
-  {
-    id: "elevation_3d",
-    name: "3D Elevation & Structural CAD",
-    pricePerSqft: 35,
-    unitText: "₹35 / sq.ft",
-    desc: "Bespoke 3D VR Architectural model & structural drawings.",
-    icon: Sparkles,
-  },
-  {
-    id: "modular_kitchen",
-    name: "Full Modular Kitchen & Chimney",
-    flatPrice: 85000,
-    unitText: "₹85,000 flat",
-    desc: "Soft-close cabinets, quartz countertop & SS sink.",
-    icon: Wrench,
-  },
-  {
-    id: "false_ceiling",
-    name: "Interior False Ceiling & Lighting",
-    pricePerSqft: 45,
-    unitText: "₹45 / sq.ft",
-    desc: "Gypsum false ceiling with COB LED strip profiles.",
-    icon: Layers,
-  },
-  {
-    id: "sump_tank",
-    name: "Underground Sump & Roof Tank",
-    flatPrice: 65000,
-    unitText: "₹65,000 flat",
-    desc: "10,000L RCC sump tank + 1,000L roof tank.",
-    icon: HardHat,
-  },
-  {
-    id: "smart_home",
-    name: "Smart Home Automation Wiring",
-    flatPrice: 40000,
-    unitText: "₹40,000 flat",
-    desc: "Touch panels, video door phone & smart switches.",
-    icon: ShieldCheck,
-  },
-  {
-    id: "compound_wall",
-    name: "Exterior Compound Wall & Gate",
-    flatPrice: 75000,
-    unitText: "₹75,000 flat",
-    desc: "Brick compound wall with heavy metal sliding gate.",
-    icon: Building2,
-  },
-];
+  if (services.length === 0) {
+    return (
+      <section className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 sm:p-10 text-center shadow-xs">
+        <Receipt className="mx-auto h-10 w-10 text-slate-300" />
+        <h2 className="mt-3 text-lg font-black text-slate-900">
+          {searching ? "No budget friendly services match your search" : "No budget friendly services yet"}
+        </h2>
+        <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-slate-500">
+          {searching
+            ? "Try a different word, or clear the search."
+            : "We are adding these soon. Tell us what you need and our team will help you directly."}
+        </p>
+        <button
+          type="button"
+          onClick={onConsult}
+          className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-xs font-black text-white shadow-lg shadow-slate-900/15 hover:bg-slate-800"
+        >
+          Request a Consultation
+          <ArrowRight className="h-4 w-4" />
+        </button>
+      </section>
+    );
+  }
 
-export default function ConstructionHome() {
-  useModuleBackHandler(true);
+  return (
+    <section className="space-y-4">
+      <div>
+        <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+          <Receipt className="w-5 h-5 text-emerald-600" />
+          Budget Friendly Services
+        </h3>
+        <p className="text-xs text-slate-500 font-medium">
+          Practical construction solutions designed to keep your project within budget
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {services.map((service) => {
+          const features = (service.features || []).slice(0, 4);
+          const canEnquire = Boolean(service.enquiryServiceKey);
+          return (
+            <div
+              key={service._id}
+              className="flex flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition-all hover:border-emerald-400 hover:shadow-md"
+            >
+              {service.image ? (
+                <img src={service.image} alt="" loading="lazy" className="h-36 w-full object-cover" />
+              ) : (
+                <div className="flex h-24 items-center justify-center bg-gradient-to-b from-emerald-50 to-white text-emerald-500">
+                  <Receipt className="h-8 w-8" />
+                </div>
+              )}
+
+              <div className="flex flex-1 flex-col gap-2 p-4">
+                {service.badge ? (
+                  <span className="self-start rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[10.5px] font-extrabold uppercase tracking-wider text-emerald-800">
+                    {service.badge}
+                  </span>
+                ) : null}
+                <div>
+                  <h4 className="text-base font-black text-slate-900">{service.name}</h4>
+                  {service.tagline ? (
+                    <p className="text-xs font-medium text-slate-500">{service.tagline}</p>
+                  ) : null}
+                </div>
+                {service.description ? (
+                  <p className="line-clamp-3 text-xs font-medium leading-relaxed text-slate-600">
+                    {service.description}
+                  </p>
+                ) : null}
+
+                {features.length > 0 && (
+                  <ul className="space-y-1 pt-1">
+                    {features.map((item) => (
+                      <li key={item} className="flex items-start gap-1.5 text-xs font-medium text-slate-700">
+                        <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <div className="mt-auto space-y-3 border-t border-slate-100 pt-3">
+                  <div>
+                    {service.price != null ? (
+                      <>
+                        <span className="text-[11px] font-bold text-slate-500">From </span>
+                        <span className="text-xl font-black text-slate-900">{fullMoney(service.price)}</span>
+                        {service.unit ? (
+                          <span className="ml-1 text-xs font-bold text-slate-500">{service.unit}</span>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span className="text-xs font-extrabold text-slate-900">Quoted after a site visit</span>
+                    )}
+                    {service.typicalDurationText ? (
+                      <span className="block text-[11px] font-medium text-slate-500">
+                        {service.typicalDurationText}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {canEnquire ? (
+                    <button
+                      type="button"
+                      onClick={() => onEnquire(service)}
+                      className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2.5 text-xs font-extrabold text-white shadow-sm transition-all hover:bg-emerald-500 active:scale-95"
+                    >
+                      View details &amp; enquire
+                      <ArrowRight className="h-4 w-4" />
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The construction home screen, and — through `serviceType` — its three sections.
+ *
+ * Which section is open comes from the address, not from local state: the router
+ * renders this component at /construction (no `serviceType`, the section chooser)
+ * and at each section's own path. That is what lets a section be linked to and
+ * refreshed, and lets the back button return to the chooser.
+ */
+export default function ConstructionHome({ serviceType = null }) {
+  // Back on the chooser leaves the module. Inside a section it must behave as
+  // ordinary back — to the chooser — so the module handler is only active there.
+  useModuleBackHandler(!serviceType);
   const navigate = useNavigate();
   const { location } = useAppLocation();
   const { openLocationSelector } = useLocationSelector();
 
+  const selectedServiceType = serviceType;
   // Active Category Section: 'residential' | 'commercial'
   const [selectedCategory, setSelectedCategory] = useState("residential");
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Residential and commercial packages are managed in the admin panel.
+  const [packages, setPackages] = useState({ residential: [], commercial: [] });
+  const [packagesLoading, setPackagesLoading] = useState(true);
+  // Budget Friendly offerings: their own admin-managed list, separate from the catalogue.
+  const [budgetItems, setBudgetItems] = useState([]);
+  const [budgetLoading, setBudgetLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [live, setLive] = useState({ projects: [], quotes: 0, enquiries: 0 });
 
-  // ── Interactive Residential Requirement Builder State ────────────────────
-  const [isRequirementModalOpen, setIsRequirementModalOpen] = useState(false);
-  const [builderPackage, setBuilderPackage] = useState(RESIDENTIAL_PACKAGES[1]); // Default Gold
-  const [plotArea, setPlotArea] = useState(1200);
-  const [floors, setFloors] = useState(2); // G+1 (2 floors)
-  const [selectedAddons, setSelectedAddons] = useState(["elevation_3d", "modular_kitchen"]);
-  const [customerInfo, setCustomerInfo] = useState({
-    name: "",
-    phone: "",
-    city: "",
-    startDate: "Next 30 Days",
-    notes: "",
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // Searching in one section and then opening another should not carry the words along.
+  useEffect(() => {
+    setQuery("");
+  }, [serviceType]);
 
   // Load Catalogue Data & Live Stats
   useEffect(() => {
@@ -282,6 +239,51 @@ export default function ConstructionHome() {
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    constructionApi
+      .getBudgetServices()
+      .then((rows) => {
+        if (!cancelled) setBudgetItems(rows || []);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          toast.error(error?.response?.data?.message || "Could not load budget friendly services");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setBudgetLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    constructionApi
+      .getPackages()
+      .then((rows) => {
+        if (cancelled) return;
+        const display = (rows || []).map(toDisplayPackage);
+        setPackages({
+          residential: display.filter((p) => p.segment === "residential"),
+          commercial: display.filter((p) => p.segment === "commercial"),
+        });
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          toast.error(error?.response?.data?.message || "Could not load packages");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setPackagesLoading(false);
       });
     return () => {
       cancelled = true;
@@ -330,6 +332,18 @@ export default function ConstructionHome() {
     [categories]
   );
 
+  // The search box at the top also narrows the Budget Friendly list.
+  const budgetServices = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return budgetItems;
+    return budgetItems.filter(
+      (s) =>
+        s.name?.toLowerCase().includes(q) ||
+        s.tagline?.toLowerCase().includes(q) ||
+        s.description?.toLowerCase().includes(q)
+    );
+  }, [budgetItems, query]);
+
   const searchResults = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return null;
@@ -341,124 +355,47 @@ export default function ConstructionHome() {
     );
   }, [query, allBackendServices]);
 
-  // ── Calculation Logic ────────────────────────────────────────────────────
-  const ratePerSqft = useMemo(() => {
-    return parseInt(String(builderPackage?.price || "1950").replace(/[^\d]/g, ""), 10) || 1950;
-  }, [builderPackage]);
-
-  const totalBuiltupArea = useMemo(() => {
-    return Math.max(100, Number(plotArea || 0) * Number(floors || 1));
-  }, [plotArea, floors]);
-
-  const basePackageCost = useMemo(() => {
-    return totalBuiltupArea * ratePerSqft;
-  }, [totalBuiltupArea, ratePerSqft]);
-
-  const addonsCost = useMemo(() => {
-    return selectedAddons.reduce((acc, addonId) => {
-      const addon = RESIDENTIAL_ADDONS.find((a) => a.id === addonId);
-      if (!addon) return acc;
-      if (addon.flatPrice) return acc + addon.flatPrice;
-      if (addon.pricePerSqft) return acc + addon.pricePerSqft * totalBuiltupArea;
-      return acc;
-    }, 0);
-  }, [selectedAddons, totalBuiltupArea]);
-
-  const totalEstimatedCost = useMemo(() => {
-    return basePackageCost + addonsCost;
-  }, [basePackageCost, addonsCost]);
-
-  const handleOpenRequirementBuilder = (pkg = null) => {
-    if (pkg) setBuilderPackage(pkg);
-    setIsRequirementModalOpen(true);
-  };
-
-  const toggleAddon = (addonId) => {
-    setSelectedAddons((prev) =>
-      prev.includes(addonId) ? prev.filter((id) => id !== addonId) : [...prev, addonId]
-    );
-  };
-
-  const handleSubmitRequirement = async (e) => {
-    if (e && e.preventDefault) e.preventDefault();
-    if (!customerInfo.name.trim() || !customerInfo.phone.trim()) {
-      toast.error("Please enter your name and contact phone number.");
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      const selectedAddonDocs = RESIDENTIAL_ADDONS.filter((a) => selectedAddons.includes(a.id));
-      const addonNames = selectedAddonDocs.map((a) => a.name).join(", ") || "None";
-
-      const enquiryPayload = {
-        title: `Residential Construction (${builderPackage.name}) - ${totalBuiltupArea} sq.ft`,
-        description: `--- RESIDENTIAL REQUIREMENT BREAKDOWN ---
-Package Tier: ${builderPackage.name} (${builderPackage.price}/sq.ft)
-Plot Area: ${plotArea} sq.ft | Floors: ${floors} (Total Built-up: ${totalBuiltupArea} sq.ft)
-Selected Add-ons: ${addonNames}
-Base Package Cost: ₹${basePackageCost.toLocaleString('en-IN')}
-Add-ons Total Cost: ₹${addonsCost.toLocaleString('en-IN')}
-Estimated Total Budget: ₹${totalEstimatedCost.toLocaleString('en-IN')}
-
---- CUSTOMER CONTACT ---
-Name: ${customerInfo.name}
-Phone: ${customerInfo.phone}
-Site Location: ${customerInfo.city || location?.city || "Indore"}
-Target Start Date: ${customerInfo.startDate}
-Additional Notes: ${customerInfo.notes || "None"}`,
-        location: {
-          city: customerInfo.city || location?.city || "Indore",
-          address: location?.formattedAddress || customerInfo.city || "Indore",
-        },
-      };
-
-      await constructionApi.createEnquiry(enquiryPayload);
-      toast.success("Residential Requirement Submitted Successfully! Our architect will contact you shortly.");
-      setIsRequirementModalOpen(false);
-      navigate("/construction/enquiries");
-    } catch (error) {
-      toast.error(error?.response?.data?.message || "Failed to submit requirement. Please try again.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleSendWhatsAppRequirement = () => {
-    const selectedAddonDocs = RESIDENTIAL_ADDONS.filter((a) => selectedAddons.includes(a.id));
-    const addonNames = selectedAddonDocs.map((a) => a.name).join(", ") || "None";
-    const msg = `*SMSPRO Residential Construction Requirement*
-----------------------------------------
-*Package:* ${builderPackage.name} (${builderPackage.price}/sq.ft)
-*Built-up Area:* ${totalBuiltupArea} sq.ft (${plotArea} sq.ft × ${floors} floor${floors > 1 ? "s" : ""})
-*Selected Custom Services:* ${addonNames}
-*Base Cost:* ₹${basePackageCost.toLocaleString('en-IN')}
-*Addons Cost:* ₹${addonsCost.toLocaleString('en-IN')}
-*Estimated Total:* ₹${totalEstimatedCost.toLocaleString('en-IN')}
-
-*Customer Name:* ${customerInfo.name || "Customer"}
-*Phone:* ${customerInfo.phone || "N/A"}
-*Location:* ${customerInfo.city || location?.city || "Indore"}
-*Start Date:* ${customerInfo.startDate}
-${customerInfo.notes ? `*Notes:* ${customerInfo.notes}` : ""}`;
-
-    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
-    window.open(url, "_blank");
-  };
-
-  const handlePackageClick = (pkg) => {
-    handleOpenRequirementBuilder(pkg);
-  };
-
   const handleBackendServiceClick = (service) => {
     navigate(`/construction/services/${service.slug || service._id}`);
   };
+
+  const serviceTypeOptions = [
+    {
+      id: "end-to-end",
+      title: "End-to-End Service",
+      description: "Complete construction management, from planning and design to handover.",
+      detail: "Residential and Commercial",
+      icon: HardHat,
+      tone: "amber",
+    },
+    {
+      id: "budget-friendly",
+      title: "Budget Friendly Service",
+      description: "Practical construction solutions designed to keep your project within budget.",
+      detail: "Value-first planning and execution",
+      icon: Receipt,
+      tone: "emerald",
+    },
+    {
+      id: "material-services",
+      title: "Material Services",
+      description: "Source quality construction materials with transparent pricing and reliable delivery.",
+      detail: "Cement, steel, tiles and more",
+      icon: Layers,
+      tone: "blue",
+    },
+  ];
+
+  const selectedServiceOption = serviceTypeOptions.find(
+    (option) => option.id === selectedServiceType
+  );
 
   return (
     <ConstructionPageShell showServiceSwitcher>
       <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-amber-500/20">
         
         {/* ── Top Bar: Search Bar ──────────────────────────────────────── */}
-        <div className="bg-white/95 backdrop-blur-xl border-b border-slate-200/80 px-4 py-3 sticky top-0 z-30 shadow-xs">
+        <div className={`bg-white/95 backdrop-blur-xl border-b border-slate-200/80 px-4 py-3 sticky top-0 z-30 shadow-xs ${!selectedServiceType ? "hidden" : ""}`}>
           <div className="max-w-7xl mx-auto">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -482,7 +419,98 @@ ${customerInfo.notes ? `*Notes:* ${customerInfo.notes}` : ""}`;
         </div>
 
         {/* ── Main Content Area ──────────────────────────────────────────── */}
-        <main className="max-w-7xl mx-auto px-4 py-6 space-y-7">
+        {!selectedServiceType && (
+          <section className="min-h-[calc(100vh-5rem)] flex items-center justify-center bg-slate-50 px-4 py-10">
+            <div className="w-full max-w-5xl space-y-8">
+              <BannerCarousel />
+
+              <div className="text-center max-w-2xl mx-auto space-y-3">
+                <span className="inline-flex items-center gap-2 text-xs font-extrabold uppercase tracking-widest text-amber-700 bg-amber-100 px-3 py-1.5 rounded-full border border-amber-200">
+                  <Building2 className="w-4 h-4" />
+                  Construction Services
+                </span>
+                <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-slate-950">
+                  What can we help you build?
+                </h1>
+                <p className="text-sm sm:text-base text-slate-500 font-medium">
+                  Choose a service to get started with the right construction solution for your project.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {serviceTypeOptions.map((option, index) => {
+                  const Icon = option.icon;
+                  const toneClasses = {
+                    amber: "bg-amber-500 text-slate-950 border-amber-400 shadow-amber-500/20",
+                    emerald: "bg-emerald-500 text-white border-emerald-400 shadow-emerald-500/20",
+                    blue: "bg-blue-600 text-white border-blue-500 shadow-blue-500/20",
+                  };
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => navigate(pathForServiceType(option.id))}
+                      className={`group relative text-left rounded-3xl border p-5 sm:p-6 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${
+                        index === 0
+                          ? "border-amber-300 ring-2 ring-amber-400/20 shadow-lg shadow-amber-500/10"
+                          : "border-slate-200 shadow-sm hover:border-slate-300"
+                      }`}
+                    >
+                      {index === 0 && (
+                        <span className="absolute right-4 top-4 rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-amber-800">
+                          Recommended
+                        </span>
+                      )}
+                      <span className={`flex h-12 w-12 items-center justify-center rounded-2xl shadow-md ${toneClasses[option.tone]}`}>
+                        <Icon className="h-6 w-6" />
+                      </span>
+                      <h2 className="mt-5 text-lg font-black text-slate-950">{option.title}</h2>
+                      <p className="mt-2 min-h-12 text-xs leading-relaxed text-slate-500 font-medium">
+                        {option.description}
+                      </p>
+                      <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
+                        <span className="text-[11px] font-extrabold text-slate-700">{option.detail}</span>
+                        <ChevronRight className="h-4 w-4 text-slate-400 transition-transform group-hover:translate-x-1" />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+        )}
+
+        <main className={`max-w-7xl mx-auto px-4 py-6 space-y-7 ${!selectedServiceType ? "hidden" : ""}`}>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => navigate(CONSTRUCTION_HOME_PATH)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-extrabold text-slate-700 shadow-xs hover:border-amber-400 hover:text-amber-700"
+            >
+              <ArrowRight className="h-4 w-4 rotate-180" />
+              All Services
+            </button>
+            <span className="text-xs font-bold text-slate-400">/</span>
+            <span className="text-sm font-black text-slate-900">{selectedServiceOption?.title}</span>
+          </div>
+
+          {selectedServiceType === "budget-friendly" && (
+            <BudgetFriendlyServices
+              services={budgetServices}
+              loading={budgetLoading}
+              searching={Boolean(query.trim())}
+              onEnquire={(service) => navigate(`/construction/services/${service.enquiryServiceKey}?budget=${service._id}`)}
+              onConsult={() => navigate("/construction/enquiries")}
+            />
+          )}
+
+          {selectedServiceType === "material-services" && (
+            <MaterialsSection query={query} defaultCity={location?.city || ""} />
+          )}
+
+          {selectedServiceType === "end-to-end" && (
+            <>
 
           {/* ── Search Mode Active ────────────────────────────────────────── */}
           {searchResults ? (
@@ -669,7 +697,9 @@ ${customerInfo.notes ? `*Notes:* ${customerInfo.notes}` : ""}`;
                       </p>
                       <div className="pt-2 flex items-center gap-2">
                         <span className="text-[11px] font-extrabold text-amber-800 bg-amber-100 border border-amber-200 px-2.5 py-0.5 rounded-full">
-                          4 Packages (Silver, Gold, Diamond, Platinum)
+                          {packages.residential.length
+                            ? `${packages.residential.length} Package${packages.residential.length === 1 ? "" : "s"} (${packages.residential.map((p) => p.name.replace(/ Package$/i, "")).join(", ")})`
+                            : "Residential Packages"}
                         </span>
                       </div>
                     </div>
@@ -738,19 +768,24 @@ ${customerInfo.notes ? `*Notes:* ${customerInfo.notes}` : ""}`;
                           </p>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() => handleOpenRequirementBuilder()}
-                          className="px-4 py-2 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 active:scale-95 transition-all self-start sm:self-auto"
-                        >
-                          <Sparkles className="w-4 h-4 fill-current" />
-                          <span>Build Custom Requirement</span>
-                        </button>
+                        {packages.residential.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => navigate(selectPackagePath())}
+                            className="px-4 py-2 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 active:scale-95 transition-all self-start sm:self-auto"
+                          >
+                            <Sparkles className="w-4 h-4 fill-current" />
+                            <span>Build Custom Requirement</span>
+                          </button>
+                        )}
                       </div>
 
                       {/* Tier Cards List in App View */}
                       <div className="grid grid-cols-1 gap-4.5">
-                        {RESIDENTIAL_PACKAGES.map((pkg) => {
+                        {packages.residential.length === 0 && (
+                          <PackagesEmpty loading={packagesLoading} label="residential" />
+                        )}
+                        {packages.residential.map((pkg) => {
                           const IconComponent = pkg.icon;
                           return (
                             <div
@@ -807,10 +842,10 @@ ${customerInfo.notes ? `*Notes:* ${customerInfo.notes}` : ""}`;
                               <div className="pt-6">
                                 <button
                                   type="button"
-                                  onClick={() => handlePackageClick(pkg)}
+                                  onClick={() => navigate(selectPackagePath(pkg.id))}
                                   className={`w-full py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-95 ${pkg.btnStyle}`}
                                 >
-                                  Get Free Quote
+                                  Select Package
                                   <ArrowRight className="w-4 h-4" />
                                 </button>
                               </div>
@@ -843,7 +878,10 @@ ${customerInfo.notes ? `*Notes:* ${customerInfo.notes}` : ""}`;
 
                       {/* Commercial Cards List in App View */}
                       <div className="grid grid-cols-1 gap-4.5">
-                        {COMMERCIAL_SERVICES.map((comm) => {
+                        {packages.commercial.length === 0 && (
+                          <PackagesEmpty loading={packagesLoading} label="commercial" />
+                        )}
+                        {packages.commercial.map((comm) => {
                           const IconComp = comm.icon;
                           return (
                             <div
@@ -878,7 +916,7 @@ ${customerInfo.notes ? `*Notes:* ${customerInfo.notes}` : ""}`;
                               <div className="pt-5">
                                 <button
                                   type="button"
-                                  onClick={() => handlePackageClick(comm)}
+                                  onClick={() => navigate(selectPackagePath(comm.id))}
                                   className={`w-full py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-95 ${comm.btnStyle}`}
                                 >
                                   Request Commercial Estimate
@@ -924,285 +962,12 @@ ${customerInfo.notes ? `*Notes:* ${customerInfo.notes}` : ""}`;
               </section>
             </>
           )}
+            </>
+          )}
 
         </main>
       </div>
 
-      {/* ───────────────────────────────────────────────────────────────── */}
-      {/* ── INTERACTIVE RESIDENTIAL REQUIREMENT BUILDER MODAL ───────────── */}
-      {/* ───────────────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {isRequirementModalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-md overflow-y-auto">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 15 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="relative w-full max-w-2xl bg-white rounded-3xl p-5 sm:p-7 shadow-2xl border border-slate-200 my-auto overflow-hidden text-slate-900 font-sans space-y-5"
-            >
-              {/* Top Accent Bar */}
-              <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-400" />
-
-              {/* Modal Header */}
-              <div className="flex items-start justify-between gap-3 pt-1">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="p-2 rounded-xl bg-amber-100 text-amber-900 border border-amber-200">
-                      <HomeIcon className="w-5 h-5 stroke-[2.2]" />
-                    </span>
-                    <h3 className="text-lg sm:text-xl font-black text-slate-900">
-                      Custom Residential Requirement
-                    </h3>
-                  </div>
-                  <p className="text-xs text-slate-500 font-medium mt-1">
-                    Select your package, plot area, and custom add-on services for real-time cost estimation.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsRequirementModalOpen(false)}
-                  className="p-2 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition-colors shrink-0"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <form onSubmit={handleSubmitRequirement} className="space-y-5">
-                
-                {/* ── STEP 1: Select Package Tier ───────────────────────────── */}
-                <div className="space-y-2">
-                  <label className="text-xs font-black uppercase tracking-wider text-slate-700 block">
-                    1. Select Construction Package Tier
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {RESIDENTIAL_PACKAGES.map((pkg) => {
-                      const isSelected = builderPackage.id === pkg.id;
-                      return (
-                        <div
-                          key={pkg.id}
-                          onClick={() => setBuilderPackage(pkg)}
-                          className={`cursor-pointer p-3 rounded-2xl border transition-all text-center space-y-1 ${
-                            isSelected
-                              ? "bg-amber-50 border-amber-500 ring-2 ring-amber-400/40 shadow-sm"
-                              : "bg-white border-slate-200 hover:border-slate-300"
-                          }`}
-                        >
-                          <h4 className="text-xs font-black text-slate-900 truncate">{pkg.name}</h4>
-                          <p className="text-xs font-extrabold text-amber-700">{pkg.price}</p>
-                          <span className="text-[10px] text-slate-500 block">per sq.ft</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* ── STEP 2: Plot Area & Floors (Live Built-up Calculation) ── */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-slate-800 block">
-                      Plot Built-up Area (sq.ft)
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        min="200"
-                        max="20000"
-                        value={plotArea}
-                        onChange={(e) => setPlotArea(Number(e.target.value) || 0)}
-                        placeholder="e.g. 1200"
-                        className="w-full rounded-xl border border-slate-300 bg-white py-2 px-3 text-xs font-bold text-slate-900 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
-                        required
-                      />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
-                        sq.ft
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-slate-800 block">
-                      Number of Floors
-                    </label>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {[
-                        { num: 1, label: "G" },
-                        { num: 2, label: "G+1" },
-                        { num: 3, label: "G+2" },
-                        { num: 4, label: "G+3" },
-                      ].map((f) => (
-                        <button
-                          key={f.num}
-                          type="button"
-                          onClick={() => setFloors(f.num)}
-                          className={`py-2 rounded-xl text-xs font-extrabold transition-all border ${
-                            floors === f.num
-                              ? "bg-slate-900 text-white border-slate-900 shadow-xs"
-                              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
-                          }`}
-                        >
-                          {f.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="sm:col-span-2 flex items-center justify-between border-t border-slate-200/80 pt-2 text-xs font-bold text-slate-600">
-                    <span>Total Calculated Built-up Area:</span>
-                    <span className="text-sm font-black text-slate-900 bg-white px-2.5 py-0.5 rounded-lg border border-slate-200">
-                      {totalBuiltupArea.toLocaleString("en-IN")} sq.ft
-                    </span>
-                  </div>
-                </div>
-
-                {/* ── STEP 3: Custom Add-on Services Checklist ──────────────── */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-black uppercase tracking-wider text-slate-700 block">
-                      3. Select Custom Add-on Services
-                    </label>
-                    <span className="text-[11px] font-bold text-amber-700">
-                      {selectedAddons.length} Selected
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1 scrollbar-thin">
-                    {RESIDENTIAL_ADDONS.map((addon) => {
-                      const isChecked = selectedAddons.includes(addon.id);
-                      const IconComp = addon.icon;
-                      return (
-                        <div
-                          key={addon.id}
-                          onClick={() => toggleAddon(addon.id)}
-                          className={`cursor-pointer p-3 rounded-2xl border transition-all flex items-start gap-2.5 ${
-                            isChecked
-                              ? "bg-amber-50/70 border-amber-400 shadow-2xs"
-                              : "bg-white border-slate-200 hover:border-slate-300"
-                          }`}
-                        >
-                          <div className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
-                            isChecked ? "bg-amber-500 border-amber-500 text-slate-950" : "border-slate-300 bg-white"
-                          }`}>
-                            {isChecked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                          </div>
-
-                          <div className="min-w-0 flex-1 space-y-0.5">
-                            <div className="flex items-center justify-between gap-1">
-                              <h5 className="text-xs font-extrabold text-slate-900 truncate">
-                                {addon.name}
-                              </h5>
-                              <span className="text-[10px] font-black text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded-md shrink-0">
-                                {addon.unitText}
-                              </span>
-                            </div>
-                            <p className="text-[10.5px] text-slate-500 leading-tight line-clamp-1 font-medium">
-                              {addon.desc}
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* ── STEP 4: Real-time Price Estimate Summary Card ─────────── */}
-                <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-4 rounded-2xl shadow-lg space-y-2">
-                  <div className="flex items-center justify-between text-xs text-slate-300 font-medium">
-                    <span>Base Package Cost ({builderPackage.name}):</span>
-                    <span className="font-extrabold text-white">₹{basePackageCost.toLocaleString("en-IN")}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs text-slate-300 font-medium">
-                    <span>Custom Add-ons Total ({selectedAddons.length} services):</span>
-                    <span className="font-extrabold text-amber-300">₹{addonsCost.toLocaleString("en-IN")}</span>
-                  </div>
-                  <div className="border-t border-slate-700/80 pt-2 flex items-center justify-between">
-                    <span className="text-xs font-extrabold uppercase tracking-wider text-amber-400">
-                      Estimated Project Cost:
-                    </span>
-                    <span className="text-xl sm:text-2xl font-black text-amber-400">
-                      ₹{totalEstimatedCost.toLocaleString("en-IN")}
-                    </span>
-                  </div>
-                </div>
-
-                {/* ── STEP 5: Final Contact & Site Details ──────────────────── */}
-                <div className="space-y-3 pt-1">
-                  <label className="text-xs font-black uppercase tracking-wider text-slate-700 block">
-                    4. Contact & Project Location Details
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <input
-                      type="text"
-                      placeholder="Your Full Name *"
-                      value={customerInfo.name}
-                      onChange={(e) => setCustomerInfo((c) => ({ ...c, name: e.target.value }))}
-                      className="w-full rounded-xl border border-slate-300 bg-white py-2 px-3 text-xs font-medium text-slate-900 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
-                      required
-                    />
-                    <input
-                      type="tel"
-                      placeholder="Mobile Phone Number *"
-                      value={customerInfo.phone}
-                      onChange={(e) => setCustomerInfo((c) => ({ ...c, phone: e.target.value }))}
-                      className="w-full rounded-xl border border-slate-300 bg-white py-2 px-3 text-xs font-medium text-slate-900 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
-                      required
-                    />
-                    <input
-                      type="text"
-                      placeholder="Site City / Location (e.g. Indore)"
-                      value={customerInfo.city}
-                      onChange={(e) => setCustomerInfo((c) => ({ ...c, city: e.target.value }))}
-                      className="w-full rounded-xl border border-slate-300 bg-white py-2 px-3 text-xs font-medium text-slate-900 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
-                    />
-                    <select
-                      value={customerInfo.startDate}
-                      onChange={(e) => setCustomerInfo((c) => ({ ...c, startDate: e.target.value }))}
-                      className="w-full rounded-xl border border-slate-300 bg-white py-2 px-3 text-xs font-medium text-slate-900 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
-                    >
-                      <option value="Immediately">Start Immediately</option>
-                      <option value="Next 30 Days">Start Next 30 Days</option>
-                      <option value="Within 3 Months">Within 3 Months</option>
-                    </select>
-                  </div>
-                  <textarea
-                    rows={2}
-                    placeholder="Specific design preferences, custom materials, or special notes..."
-                    value={customerInfo.notes}
-                    onChange={(e) => setCustomerInfo((c) => ({ ...c, notes: e.target.value }))}
-                    className="w-full rounded-xl border border-slate-300 bg-white py-2 px-3 text-xs font-medium text-slate-900 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 resize-none"
-                  />
-                </div>
-
-                {/* ── STEP 6: Action Buttons ────────────────────────────────── */}
-                <div className="pt-2 flex flex-col sm:flex-row items-center gap-2.5">
-                  <button
-                    type="button"
-                    onClick={handleSendWhatsAppRequirement}
-                    className="w-full sm:w-1/2 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95"
-                  >
-                    <span>Send via WhatsApp</span>
-                  </button>
-
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="w-full sm:w-1/2 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs flex items-center justify-center gap-2 transition-all shadow-md shadow-amber-500/20 active:scale-95 disabled:opacity-50"
-                  >
-                    {isSubmitting ? (
-                      <span>Submitting Requirement...</span>
-                    ) : (
-                      <>
-                        <span>Submit Final Requirement</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </>
-                    )}
-                  </button>
-                </div>
-
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </ConstructionPageShell>
   );
 }

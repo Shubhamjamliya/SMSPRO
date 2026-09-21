@@ -105,6 +105,17 @@ const constructionEnquirySchema = new mongoose.Schema(
       currentCondition: { type: String, enum: [...SITE_CONDITIONS, ''], default: '' },
     },
 
+    /**
+     * Set when the enquiry was raised from a Budget Friendly card, so the office can see
+     * which offering it came from. Null for an enquiry raised from the general catalogue.
+     */
+    budgetServiceId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ConstructionBudgetService',
+      default: null,
+      index: true,
+    },
+
     // ---------- What they can spend and when (BRD C3) ----------
     budgetMin: { type: Number, default: null, min: 0 },
     budgetMax: { type: Number, default: null, min: 0 },

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FileText, GitCompare, Star, Clock, AlertTriangle, Building2 } from "lucide-react";
+import { FileText, FileSignature, GitCompare, Star, ChevronRight } from "lucide-react";
 import constructionApi from "../services/api";
 import { ConstructionPageShell, ConstructionPageHeader, EmptyState } from "../components/ui";
 import { fullMoney, shortDate, relativeDays, QUOTE_STATUS_LABEL } from "../../shared/format";
@@ -11,17 +11,22 @@ import { fullMoney, shortDate, relativeDays, QUOTE_STATUS_LABEL } from "../../sh
 export default function MyQuotes() {
   const navigate = useNavigate();
   const [quotes, setQuotes] = useState([]);
+  // Contracts the office sent after a site visit: the quotation for a package booking.
+  const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("live");
 
   useEffect(() => {
     let cancelled = false;
-    constructionApi
-      .listQuotations()
-      .then((rows) => { if (!cancelled) setQuotes(rows || []); })
-      .catch((err) => {
-        if (!cancelled) setError(err?.response?.data?.message || "Could not load your quotes");
+    Promise.allSettled([constructionApi.listQuotations(), constructionApi.listMySiteVisits()])
+      .then(([enquiryQuotes, siteVisits]) => {
+        if (cancelled) return;
+        if (enquiryQuotes.status === "fulfilled") setQuotes(enquiryQuotes.value || []);
+        else setError(enquiryQuotes.reason?.response?.data?.message || "Could not load your quotes");
+        if (siteVisits.status === "fulfilled") {
+          setContracts((siteVisits.value || []).filter((v) => v.contract));
+        }
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -46,7 +51,18 @@ export default function MyQuotes() {
     return [...map.values()];
   }, [filtered]);
 
-  const liveCount = quotes.filter((q) => LIVE.includes(q.status)).length;
+  // A contract still waiting on the customer, unless its offer has lapsed.
+  const contractIsLive = (v) => v.contract.status === "sent" && !v.contract.expired;
+
+  const filteredContracts = useMemo(() => {
+    if (filter === "live") return contracts.filter(contractIsLive);
+    if (filter === "accepted") return contracts.filter((v) => v.contract.status === "accepted");
+    return contracts;
+  }, [contracts, filter]);
+
+  const liveCount =
+    quotes.filter((q) => LIVE.includes(q.status)).length + contracts.filter(contractIsLive).length;
+  const totalCount = quotes.length + contracts.length;
 
   return (
     <ConstructionPageShell>
@@ -57,7 +73,7 @@ export default function MyQuotes() {
             ? "Loading…"
             : liveCount
               ? `${liveCount} quote${liveCount === 1 ? "" : "s"} awaiting your decision`
-              : `${quotes.length} total quotes received`
+              : `${totalCount} total quotes received`
         }
         backTo="/construction"
       />
@@ -95,17 +111,17 @@ export default function MyQuotes() {
               <div key={i} className="h-32 animate-pulse rounded-xl bg-slate-200/80" />
             ))}
           </div>
-        ) : groups.length === 0 ? (
+        ) : groups.length === 0 && filteredContracts.length === 0 ? (
           <EmptyState
             icon={FileText}
             title={filter === "live" ? "No Quotes Pending" : "No Quotations Received"}
             detail={
-              quotes.length === 0
+              totalCount === 0
                 ? "Submit an enquiry for your project to receive written, itemised quotes from verified contractors."
                 : "No quotes matched the selected filter."
             }
             action={
-              quotes.length === 0 ? (
+              totalCount === 0 ? (
                 <button
                   type="button"
                   onClick={() => navigate("/construction")}
@@ -118,6 +134,49 @@ export default function MyQuotes() {
           />
         ) : (
           <ul className="space-y-3">
+            {filteredContracts.map((v) => {
+              const c = v.contract;
+              const live = contractIsLive(v);
+              const statusText = c.expired
+                ? "Expired"
+                : { sent: "Awaiting your answer", accepted: "Accepted", rejected: "Declined" }[c.status] || c.status;
+              return (
+                <li key={`contract-${v.id}`}>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/construction/quotations/visit/${v.id}`)}
+                    className={`group flex w-full items-center gap-3.5 rounded-xl border bg-white p-4 text-left shadow-2xs transition-all hover:border-amber-400/80 active:scale-[0.99] ${
+                      live ? "border-amber-300" : "border-slate-200"
+                    }`}
+                  >
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 ring-1 ring-amber-200">
+                      <FileSignature className="h-5 w-5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-black text-slate-900 group-hover:text-amber-700 transition-colors">
+                        {v.package?.name} · site visit contract
+                      </span>
+                      <span className="mt-0.5 block truncate text-[11px] font-medium text-slate-500">
+                        {c.number} · {v.site?.city}
+                        {c.sentAt ? ` · Sent ${shortDate(c.sentAt)}` : ""}
+                      </span>
+                      <span className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] font-medium">
+                        <span className={`font-bold ${live ? "text-amber-700" : c.status === "accepted" ? "text-emerald-700" : "text-slate-600"}`}>
+                          {statusText}
+                        </span>
+                        {live && c.validUntil ? (
+                          <span className="font-semibold text-amber-700">· Valid until {shortDate(c.validUntil)}</span>
+                        ) : null}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-right">
+                      <span className="block text-sm font-black tabular-nums text-slate-900">{fullMoney(c.price)}</span>
+                      <ChevronRight className="ml-auto mt-0.5 h-4 w-4 text-slate-400 group-hover:text-amber-600" />
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
             {groups.map((group) => {
               const liveInGroup = group.quotes.filter((q) => LIVE.includes(q.status));
               const canCompare = liveInGroup.length > 1 && group.enquiry?._id;

@@ -4,6 +4,7 @@ import { extractPerformer } from '../../../core/utils/performer.js';
 import { buildPaginationOptions, buildPaginatedResult } from '../../../utils/helpers.js';
 import { ConstructionEnquiry } from '../models/constructionEnquiry.model.js';
 import { ConstructionService } from '../models/constructionService.model.js';
+import { ConstructionBudgetService } from '../models/constructionBudgetService.model.js';
 import { ContractorLead } from '../models/contractorLead.model.js';
 import { SiteVisit } from '../models/siteVisit.model.js';
 import { Quotation } from '../models/quotation.model.js';
@@ -49,8 +50,20 @@ export const createEnquiry = async (customerId, data) => {
     .lean();
   if (!service) throw new ValidationError('That service is not available');
 
+  // Remember which Budget Friendly card this came from. A card that has since been removed
+  // must not block the enquiry, so it is quietly dropped rather than rejected.
+  let budgetServiceId = null;
+  if (data.budgetServiceId) {
+    const card = await ConstructionBudgetService
+      .findOne({ _id: data.budgetServiceId, ...alive })
+      .select('_id')
+      .lean();
+    budgetServiceId = card?._id || null;
+  }
+
   const enquiry = await ConstructionEnquiry.create({
     ...data,
+    budgetServiceId,
     customerId,
     categoryId: service.categoryId,
     status: 'submitted',
@@ -352,12 +365,23 @@ export const compareQuotations = async (customerId, enquiryId) => {
 
 // ---------- Admin (BRD A4 — enquiry pipeline) ----------
 
+/**
+ * The Budget Friendly view of the enquiries: only those raised from a Budget Friendly card,
+ * or from one specific card.
+ */
+const budgetScope = (query = {}) => {
+  if (query.budgetServiceId) return { budgetServiceId: query.budgetServiceId };
+  if (query.budget === 'true') return { budgetServiceId: { $ne: null } };
+  return {};
+};
+
 export const listEnquiriesAdmin = async (query = {}) => {
   const { page, limit, skip } = buildPaginationOptions(query);
   const filter = { ...alive };
   if (query.status) filter.status = query.status;
   if (query.city) filter['site.city'] = new RegExp(String(query.city).trim(), 'i');
   if (query.categoryId) filter.categoryId = query.categoryId;
+  Object.assign(filter, budgetScope(query));
 
   // "Gone quiet" is the whole point of this screen — surface them explicitly.
   if (query.stale === 'true') {
@@ -369,6 +393,7 @@ export const listEnquiriesAdmin = async (query = {}) => {
   const [docs, total] = await Promise.all([
     ConstructionEnquiry.find(filter)
       .populate('serviceId', 'name')
+      .populate('budgetServiceId', 'name')
       .populate('customerId', 'name phone')
       .sort({ lastActivityAt: -1 })
       .skip(skip)
@@ -447,14 +472,15 @@ export const closeEnquiry = async (enquiryId, reason, reqUser = null) => {
   return enquiry.toObject();
 };
 
-export const getEnquiryStats = async () => {
+export const getEnquiryStats = async (query = {}) => {
+  const scope = { ...alive, ...budgetScope(query) };
   const [byStatus, staleCount] = await Promise.all([
     ConstructionEnquiry.aggregate([
-      { $match: alive },
+      { $match: scope },
       { $group: { _id: '$status', count: { $sum: 1 } } },
     ]),
     ConstructionEnquiry.countDocuments({
-      ...alive,
+      ...scope,
       status: { $nin: ['converted', 'closed_lost', 'expired', 'accepted'] },
       lastActivityAt: { $lt: new Date(Date.now() - 7 * 86400000) },
     }),

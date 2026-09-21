@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { CalendarClock, FileText, HardHat, Home, Inbox, LogOut, Menu, Wrench } from "lucide-react";
-import { clearContractorAuth, getContractorUser } from "../utils/authContractor";
+import { CalendarClock, FileText, HardHat, Home, Inbox, Menu, Wrench } from "lucide-react";
+import { getContractorUser } from "../utils/authContractor";
 import ContractorSidebar from "./ContractorSidebar";
+import ContractorNotifications from "./ContractorNotifications";
+import { CONSTRUCTION_FONT } from "../../shared/fonts";
 
 const TABS = [
   { to: "/contractor/dashboard", label: "Home", icon: Home },
@@ -35,13 +37,8 @@ export default function ContractorShell({ title, subtitle, children, action }) {
   const contractor = getContractorUser();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const signOut = () => {
-    clearContractorAuth();
-    navigate("/contractor/login", { replace: true });
-  };
-
   return (
-    <div className="min-h-screen bg-white pb-20">
+    <div className="min-h-screen bg-slate-50 pb-20 antialiased" style={{ fontFamily: CONSTRUCTION_FONT }}>
       <ContractorSidebar open={menuOpen} onClose={() => setMenuOpen(false)} />
 
       <header className="sticky top-0 z-10 border-b border-gray-100 bg-white/95 px-4 py-3.5 backdrop-blur">
@@ -63,14 +60,8 @@ export default function ContractorShell({ title, subtitle, children, action }) {
           </div>
           <div className="flex shrink-0 items-center gap-1">
             {action}
-            <button
-              type="button"
-              onClick={signOut}
-              className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
-              aria-label="Sign out"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
+            {/* Signing out lives in the menu; the bell is what a contractor reaches for constantly. */}
+            <ContractorNotifications />
           </div>
         </div>
       </header>

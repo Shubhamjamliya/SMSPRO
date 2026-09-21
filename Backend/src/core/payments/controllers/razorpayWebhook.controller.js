@@ -184,6 +184,27 @@ export const handleRazorpayWebhook = async (req, res) => {
                 return res.status(200).json({ status: 'ok' });
             }
 
+            // CASE A-5: Construction package visiting fee — reconciles a booking that is still
+            // awaiting payment if the customer paid but never came back to the app's own verify
+            // step (closed tab, dropped network). Idempotent with that step: whichever arrives
+            // first claims the payment, the other finds it already settled.
+            if (effectiveNotes.module === 'construction' && effectiveNotes.type === 'package_visit_fee') {
+                try {
+                    const { confirmVisitFeePayment } = await import(
+                        '../../../modules/construction/services/packageRequest.service.js'
+                    );
+                    await confirmVisitFeePayment(
+                        effectiveNotes.requestId,
+                        { orderId: rzOrderId, paymentId: rzPaymentId },
+                        { viaWebhook: true },
+                    );
+                    logger.info(`Webhook [payment.captured]: Reconciled construction package visit ${effectiveNotes.requestId}`);
+                } catch (constructionErr) {
+                    logger.error(`Webhook Construction Package Payment Error: ${constructionErr.message}`);
+                }
+                return res.status(200).json({ status: 'ok' });
+            }
+
             // CASE B: Regular Food Order
             const order = await FoodOrder.findOneAndUpdate(
                 {

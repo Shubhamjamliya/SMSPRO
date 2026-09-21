@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import ProtectedRoute from "./ProtectedRoute";
 import { AuthPageGuard } from "@core/guards/RouteGuard";
 import AdminLayout from "./AdminLayout";
+import { enableAdminPoppins } from "@/shared/utils/adminFont";
 import Loader from "@food/components/Loader";
 import { useAuth } from "@core/context/AuthContext";
 import { getCurrentUser } from "@food/utils/auth";
@@ -404,6 +405,10 @@ function FoodAdminIndex() {
 }
 
 export default function AdminRouter() {
+  // Poppins for everything under /admin, including the login page. Removed again on
+  // leaving so the customer app keeps its own font.
+  useEffect(() => enableAdminPoppins(), []);
+
   return (
     <Suspense fallback={<Loader />}>
       <Routes>

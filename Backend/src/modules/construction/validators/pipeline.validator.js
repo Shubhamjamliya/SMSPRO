@@ -26,6 +26,7 @@ export const validateObjectId = (value, label = 'id') => {
 
 const enquirySchema = z.object({
   serviceId: objectId,
+  budgetServiceId: objectId.nullish(),
   description: optionalText(3000),
   site: z.object({
     addressLine: optionalText(300),
@@ -68,6 +69,7 @@ export const validateEnquiryDto = (body = {}) => {
 
   return {
     serviceId: d.serviceId,
+    budgetServiceId: d.budgetServiceId || null,
     description: d.description?.trim() || '',
     site,
     budgetMin: d.budgetMin ?? null,

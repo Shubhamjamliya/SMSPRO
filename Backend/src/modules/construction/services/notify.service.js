@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { FoodNotification } from '../../../core/notifications/models/notification.model.js';
-import { notifyOwnerSafely } from '../../../core/notifications/firebase.service.js';
+import { notifyOwnerSafely, notifyAdminsSafely } from '../../../core/notifications/firebase.service.js';
+import { FoodAdmin } from '../../../core/admin/admin.model.js';
 import { getIO, rooms } from '../../../config/socket.js';
 import { logger } from '../../../utils/logger.js';
 import { ContractorProfile } from '../models/contractorProfile.model.js';
@@ -90,6 +91,70 @@ export const notify = async ({
   );
 
   return row;
+};
+
+/**
+ * Tell the office something needs a person — a push to every active admin plus a live
+ * event for any admin who has the panel open. The notification inbox does not hold
+ * ADMIN rows, so this is push and socket only. Best effort like everything here.
+ */
+export const notifyAdmins = async ({ source, title, message, link = '', metadata = {} }) => {
+  if (!title || !message) return;
+  const payloadMeta = { module: 'construction', ...metadata };
+
+  try {
+    const io = getIO();
+    if (io) {
+      const admins = await FoodAdmin.find({ isActive: true }).select('_id').lean();
+      const event = { module: 'construction', source, title, message, link, metadata: payloadMeta, createdAt: new Date() };
+      admins.forEach((a) => io.to(rooms.admin(a._id)).emit('construction:notification', event));
+    }
+  } catch (error) {
+    logger.warn(`[construction] admin socket emit failed: ${error.message}`);
+  }
+
+  await notifyAdminsSafely({
+    title,
+    body: message,
+    data: { module: 'construction', source, link, ...stringifyMeta(payloadMeta) },
+  });
+};
+
+// ---------- The contractor's notification inbox ----------
+
+const INBOX_LIMIT = 40;
+
+/** Recent notifications for one contractor, newest first, with how many are unread. */
+export const listInbox = async (contractorId) => {
+  const mine = { ownerType: 'CONTRACTOR', ownerId: contractorId, dismissedAt: null };
+  const [rows, unread] = await Promise.all([
+    FoodNotification.find(mine)
+      .select('title message link source isRead createdAt metadata')
+      .sort({ createdAt: -1 })
+      .limit(INBOX_LIMIT)
+      .lean(),
+    FoodNotification.countDocuments({ ...mine, isRead: false }),
+  ]);
+  return {
+    unread,
+    notifications: rows.map((n) => ({
+      id: String(n._id),
+      title: n.title,
+      message: n.message,
+      link: n.link || '',
+      source: n.source,
+      isRead: Boolean(n.isRead),
+      createdAt: n.createdAt,
+    })),
+  };
+};
+
+/** Mark one notification read, or every one of this contractor's when no id is given. */
+export const markInboxRead = async (contractorId, notificationId = null) => {
+  const filter = { ownerType: 'CONTRACTOR', ownerId: contractorId, isRead: false };
+  if (notificationId) filter._id = notificationId;
+  await FoodNotification.updateMany(filter, { $set: { isRead: true, readAt: new Date() } });
+  return listInbox(contractorId);
 };
 
 /** FCM data payloads must be flat strings. */

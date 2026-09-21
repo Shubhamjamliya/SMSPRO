@@ -5,6 +5,7 @@ import { Clock, Inbox, MapPin, X } from "lucide-react";
 import contractorApi from "../services/contractorApi";
 import { budgetRange, shortDate, hoursLeft } from "../../shared/format";
 import ContractorShell from "../components/ContractorShell";
+import usePackageVisitCount from "../utils/usePackageVisitCount";
 
 const errorMessage = (error, fallback) => error?.response?.data?.message || fallback;
 
@@ -42,6 +43,7 @@ export default function Leads() {
   const [declining, setDeclining] = useState(null);
   const [declineReason, setDeclineReason] = useState("too_far");
   const [declineNote, setDeclineNote] = useState("");
+  const waitingVisits = usePackageVisitCount();
 
   const load = useCallback(async () => {
     try {
@@ -90,6 +92,21 @@ export default function Leads() {
 
   return (
     <ContractorShell title="New enquiries" subtitle={stats ? `${stats.newLeads} waiting` : ""}>
+      {waitingVisits > 0 ? (
+        <button
+          type="button"
+          onClick={() => navigate("/contractor/package-requests")}
+          className="mb-4 w-full rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-left"
+        >
+          <span className="block text-[14px] font-semibold text-orange-900">
+            {waitingVisits === 1 ? "1 paid site visit is waiting" : `${waitingVisits} paid site visits are waiting`}
+          </span>
+          <span className="mt-0.5 block text-[12px] text-orange-800">
+            Package bookings near you — the first contractor to accept gets the visit. Tap to view.
+          </span>
+        </button>
+      ) : null}
+
       {stats ? (
         <div className="mb-5 grid grid-cols-3 gap-2.5">
           {[

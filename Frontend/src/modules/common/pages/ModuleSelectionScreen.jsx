@@ -1,154 +1,120 @@
 import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import {
-  UtensilsCrossed,
-  ShoppingBag,
-  Truck,
-  CarTaxiFront,
-  Bike,
-  Wrench,
-  HardHat,
-  ArrowRight,
-  Search,
-  User,
-  Sparkles,
-  ShieldCheck,
-  Zap,
-  CheckCircle2,
-  ChevronRight,
-  Compass,
-} from "lucide-react";
 import { useEnabledModules } from "../hooks/useEnabledModules";
 import { rememberUserModulePath } from "../utils/enabledModules";
 import { useAuth } from "@core/context/AuthContext";
-import { useLocation } from "@food/hooks/useLocation";
+import AppMobileFrame from "../components/AppMobileFrame";
+import ModulePictogram from "../components/ModulePictograms";
 
+/**
+ * The service picker: every service is one box of the same size, Construction first.
+ *
+ * Deliberately plain and unlike a template — a warm paper background, one dark ink, a single
+ * typeface (Poppins), each box a flat tint of its service's own colour, and hand-drawn
+ * pictograms instead of an icon set. The arrow is a typographic character, not an icon.
+ */
+
+const INK = "#1F1A17";
+const INK_SOFT = "#5E564F";
+const PAPER = "#F7F3EC";
+const LINE = "#E4DCCF";
+const FONT = "'Poppins', sans-serif";
+
+/**
+ * `tint` is the box's flat background. It is also handed to the pictogram as its "paper"
+ * colour, so the windows and cut-outs in the drawing match the box exactly.
+ * `labelColor` is a deeper shade of the accent for small text, where the accent alone is too pale.
+ */
 const ALL_MODULE_DEFINITIONS = [
-  {
-    id: "food",
-    moduleKey: "food",
-    title: "Food Delivery",
-    tagline: "Top Restaurants & Meals",
-    description: "Order hot meals from 500+ top local restaurants.",
-    path: "/food/user",
-    icon: UtensilsCrossed,
-    badgeText: "500+ Restos",
-    badgeColor: "bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300",
-    bgLight: "bg-gradient-to-br from-red-50/90 via-white to-orange-50/40 dark:from-red-950/20 dark:to-orange-950/10",
-    borderColor: "border-red-200/80 dark:border-red-800/40 hover:border-red-400",
-    iconBg: "bg-gradient-to-br from-red-500 to-orange-500 text-white shadow-red-500/25",
-  },
-  {
-    id: "quickCommerce",
-    moduleKey: "quickCommerce",
-    title: "Quick Commerce",
-    tagline: "10 Min Grocery",
-    description: "Fresh groceries, snacks & essentials delivered in minutes.",
-    path: "/quick",
-    icon: ShoppingBag,
-    badgeText: "10 Min Delivery",
-    badgeColor: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300",
-    bgLight: "bg-gradient-to-br from-emerald-50/90 via-white to-teal-50/40 dark:from-emerald-950/20 dark:to-teal-950/10",
-    borderColor: "border-emerald-200/80 dark:border-emerald-800/40 hover:border-emerald-400",
-    iconBg: "bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-emerald-500/25",
-  },
-  {
-    id: "porter",
-    moduleKey: "porter",
-    title: "Porter Courier",
-    tagline: "Instant Parcel",
-    description: "Send packages & parcels across town with OTP safety.",
-    path: "/porter",
-    icon: Truck,
-    badgeText: "Instant Parcel",
-    badgeColor: "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300",
-    bgLight: "bg-gradient-to-br from-blue-50/90 via-white to-indigo-50/40 dark:from-blue-950/20 dark:to-indigo-950/10",
-    borderColor: "border-blue-200/80 dark:border-blue-800/40 hover:border-blue-400",
-    iconBg: "bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-blue-600/25",
-  },
-  {
-    id: "taxi",
-    moduleKey: "taxi",
-    title: "Taxi & Rides",
-    tagline: "Cabs & Autos",
-    description: "Book comfortable cab rides & autos at best rates.",
-    path: "/taxi",
-    icon: CarTaxiFront,
-    badgeText: "Instant Rides",
-    badgeColor: "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300",
-    bgLight: "bg-gradient-to-br from-amber-50/90 via-white to-yellow-50/40 dark:from-amber-950/20 dark:to-yellow-950/10",
-    borderColor: "border-amber-200/80 dark:border-amber-800/40 hover:border-amber-400",
-    iconBg: "bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-amber-500/25",
-  },
-  {
-    id: "bikeRent",
-    moduleKey: "bikeRent",
-    title: "Bike Rental",
-    tagline: "Self Drive",
-    description: "Rent scooters, electric bikes & motorbikes hourly/daily.",
-    path: "/bike-rent",
-    icon: Bike,
-    badgeText: "Self Drive",
-    badgeColor: "bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300",
-    bgLight: "bg-gradient-to-br from-purple-50/90 via-white to-violet-50/40 dark:from-purple-950/20 dark:to-violet-950/10",
-    borderColor: "border-purple-200/80 dark:border-purple-800/40 hover:border-purple-400",
-    iconBg: "bg-gradient-to-br from-purple-600 to-violet-600 text-white shadow-purple-600/25",
-  },
-  {
-    id: "serviceProvider",
-    moduleKey: "serviceProvider",
-    title: "Home Services",
-    tagline: "Repairs & Pros",
-    description: "Book verified plumbers, electricians, cleaning & beauty pros.",
-    path: "/services",
-    icon: Wrench,
-    badgeText: "Verified Pros",
-    badgeColor: "bg-cyan-100 text-cyan-700 dark:bg-cyan-950/60 dark:text-cyan-300",
-    bgLight: "bg-gradient-to-br from-cyan-50/90 via-white to-blue-50/40 dark:from-cyan-950/20 dark:to-blue-950/10",
-    borderColor: "border-cyan-200/80 dark:border-cyan-800/40 hover:border-cyan-400",
-    iconBg: "bg-gradient-to-br from-cyan-600 to-blue-600 text-white shadow-cyan-600/25",
-  },
   {
     id: "construction",
     moduleKey: "construction",
     title: "Construction",
-    tagline: "Civil Work & Quotes",
-    description: "Get contractor quotes, civil work estimates & turnkey plans.",
+    tagline: "Site visits and quotes",
     path: "/construction",
-    icon: HardHat,
-    badgeText: "Pro Quotes",
-    badgeColor: "bg-orange-100 text-orange-800 dark:bg-orange-950/60 dark:text-orange-300",
-    bgLight: "bg-gradient-to-br from-orange-50/90 via-white to-amber-50/40 dark:from-orange-950/20 dark:to-amber-950/10",
-    borderColor: "border-orange-200/80 dark:border-orange-800/40 hover:border-orange-400",
-    iconBg: "bg-gradient-to-br from-orange-600 to-amber-600 text-white shadow-orange-600/25",
+    accent: "#E8590C",
+    tint: "#FBE2D2",
+    labelColor: "#B9440A",
+  },
+  {
+    id: "food",
+    moduleKey: "food",
+    title: "Food delivery",
+    tagline: "Meals from local restaurants",
+    path: "/food/user",
+    accent: "#C4432B",
+    tint: "#F5DDD5",
+    labelColor: "#A5331F",
+  },
+  {
+    id: "quickCommerce",
+    moduleKey: "quickCommerce",
+    title: "Quick commerce",
+    tagline: "Groceries in minutes",
+    path: "/quick",
+    accent: "#2F7D5B",
+    tint: "#D7EBDF",
+    labelColor: "#22694A",
+  },
+  {
+    id: "porter",
+    moduleKey: "porter",
+    title: "Courier",
+    tagline: "Send parcels across town",
+    path: "/porter",
+    accent: "#2C5F8A",
+    tint: "#D6E3EF",
+    labelColor: "#244F73",
+  },
+  {
+    id: "taxi",
+    moduleKey: "taxi",
+    title: "Taxi",
+    tagline: "Cabs and autos",
+    path: "/taxi",
+    accent: "#C99512",
+    tint: "#F6E8BF",
+    labelColor: "#7A5A05",
+  },
+  {
+    id: "bikeRent",
+    moduleKey: "bikeRent",
+    title: "Bike rental",
+    tagline: "Self-drive, by the hour",
+    path: "/bike-rent",
+    accent: "#6B4C9A",
+    tint: "#E4DCF0",
+    labelColor: "#563A82",
+  },
+  {
+    id: "serviceProvider",
+    moduleKey: "serviceProvider",
+    title: "Home services",
+    tagline: "Repairs and cleaning",
+    path: "/services",
+    accent: "#1F7A7A",
+    tint: "#D0E8E7",
+    labelColor: "#186363",
   },
 ];
-
-import AppMobileFrame from "../components/AppMobileFrame";
 
 export default function ModuleSelectionScreen() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
-  const { location } = useLocation();
   const { modules: enabledModules, loading: modulesLoading } = useEnabledModules();
   const [searchQuery, setSearchQuery] = useState("");
 
-  const activeModules = useMemo(() => {
-    return ALL_MODULE_DEFINITIONS.filter(
-      (m) => enabledModules[m.moduleKey] !== false
-    );
-  }, [enabledModules]);
+  // Construction leads the list; a module switched off in settings simply is not there.
+  const activeModules = useMemo(
+    () => ALL_MODULE_DEFINITIONS.filter((m) => enabledModules[m.moduleKey] !== false),
+    [enabledModules],
+  );
 
   const filteredModules = useMemo(() => {
-    if (!searchQuery.trim()) return activeModules;
-    const query = searchQuery.toLowerCase();
-    return activeModules.filter(
-      (m) =>
-        m.title.toLowerCase().includes(query) ||
-        m.tagline.toLowerCase().includes(query) ||
-        m.description.toLowerCase().includes(query)
-    );
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return activeModules;
+    return activeModules.filter((m) => [m.title, m.tagline].some((text) => text.toLowerCase().includes(query)));
   }, [activeModules, searchQuery]);
 
   const handleSelectModule = (moduleItem) => {
@@ -162,183 +128,107 @@ export default function ModuleSelectionScreen() {
   };
 
   return (
-    <AppMobileFrame bgClassName="bg-white dark:bg-[#121215]">
-      {/* Top Sticky Header */}
-      <div className="w-full">
-          <header className="sticky top-0 z-50 bg-white/95 dark:bg-[#121215]/95 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800 shadow-2xs px-4 py-3">
-            <div className="flex items-center justify-between gap-2">
-              {/* Brand Logo - SMSPRO */}
-              <div className="flex items-center gap-2 cursor-pointer group" onClick={() => navigate("/modules")}>
-                <div className="w-9 h-9 bg-gradient-to-br from-blue-600 via-indigo-600 to-orange-500 rounded-xl flex items-center justify-center text-white font-black text-lg shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform">
-                  <Zap className="w-5 h-5 stroke-[2.5]" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-1">
-                    <span className="text-lg font-black tracking-tighter italic text-slate-900 dark:text-white">
-                      SMS<span className="text-orange-500">PRO</span>
-                    </span>
-                    <span className="bg-orange-500/10 text-orange-600 dark:text-orange-400 text-[8.5px] font-extrabold px-1.5 py-0.2 rounded-full border border-orange-500/20 uppercase tracking-widest">
-                      App
-                    </span>
-                  </div>
-                  <span className="text-[9.5px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 block -mt-0.5">
-                    Super-App Ecosystem
-                  </span>
-                </div>
-              </div>
+    <AppMobileFrame bgClassName="bg-[#F7F3EC]">
+      <div className="w-full" style={{ fontFamily: FONT, color: INK }}>
+        <header
+          className="sticky top-0 z-40 flex items-center justify-between px-5 py-4 backdrop-blur"
+          style={{ backgroundColor: `${PAPER}F2`, borderBottom: `1px solid ${LINE}` }}
+        >
+          <button type="button" onClick={() => navigate("/modules")} className="flex items-baseline gap-2">
+            <span className="text-[19px] font-bold leading-none tracking-[0.16em]">SMSPRO</span>
+            <span className="h-[7px] w-[7px] translate-y-[-1px] bg-[#E8590C]" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate(isAuthenticated ? "/food/user/profile" : "/user/auth/login")}
+            className="rounded-full px-4 py-1.5 text-[13px] font-medium transition hover:bg-black/5"
+            style={{ border: `1px solid ${INK}` }}
+          >
+            {isAuthenticated ? "Account" : "Sign in"}
+          </button>
+        </header>
 
-              {/* Account Link */}
+        <main className="px-5 pb-10 pt-8">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: INK_SOFT }}>
+            Choose a service
+          </p>
+          <h1 className="mt-2 text-[32px] font-semibold leading-[1.15] tracking-tight">What do you need today?</h1>
+
+          {activeModules.length > 3 ? (
+            <label className="mt-5 block">
+              <span className="sr-only">Search services</span>
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search — construction, taxi, groceries"
+                className="w-full rounded-xl bg-white px-4 py-3 text-[14px] outline-none transition placeholder:text-[#9A9088] focus:border-[#1F1A17]"
+                style={{ border: `1px solid ${LINE}` }}
+              />
+            </label>
+          ) : null}
+
+          {modulesLoading ? (
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="aspect-square animate-pulse rounded-2xl" style={{ backgroundColor: "#EAE3D7" }} />
+              ))}
+            </div>
+          ) : filteredModules.length === 0 ? (
+            <div className="mt-8 rounded-2xl bg-white p-8 text-center" style={{ border: `1px solid ${LINE}` }}>
+              <p className="text-[15px] font-semibold">No service matches “{searchQuery}”</p>
+              <p className="mt-1 text-[13px]" style={{ color: INK_SOFT }}>
+                Try another word, or clear the search to see everything.
+              </p>
               <button
                 type="button"
-                onClick={() => navigate(isAuthenticated ? "/food/user/profile" : "/user/auth/login")}
-                className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-full hover:bg-slate-200 transition-all text-xs font-bold text-slate-700 dark:text-slate-200 shadow-2xs"
+                onClick={() => setSearchQuery("")}
+                className="mt-4 rounded-full px-4 py-2 text-[13px] font-medium text-white"
+                style={{ backgroundColor: INK }}
               >
-                <User className="w-3.5 h-3.5 text-orange-500" />
-                <span>{isAuthenticated ? "Account" : "Sign In"}</span>
+                Show all services
               </button>
             </div>
-          </header>
+          ) : (
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              {filteredModules.map((item, idx) => (
+                <motion.button
+                  key={item.id}
+                  type="button"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.04 * idx, duration: 0.3 }}
+                  onClick={() => handleSelectModule(item)}
+                  className="group flex aspect-square flex-col justify-between rounded-2xl p-4 text-left transition duration-200 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98]"
+                  style={{ backgroundColor: item.tint, border: `1px solid ${item.accent}33` }}
+                >
+                  <ModulePictogram moduleKey={item.moduleKey} accent={item.accent} ink={INK} paper={item.tint} size={64} />
 
-          {/* Main Body Content */}
-          <main className="px-4 py-5 space-y-5">
-            {/* Hero Heading */}
-            <div className="text-center space-y-2">
-              <div className="inline-flex items-center gap-1.5 bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-800 px-3 py-1 rounded-full text-[11px] font-extrabold text-orange-600 dark:text-orange-400">
-                <Sparkles className="w-3.5 h-3.5 text-orange-500 animate-pulse" />
-                <span>SMSPRO All-In-One Super-App</span>
-              </div>
-              <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white leading-tight">
-                All Your Services in <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-orange-500 to-red-500">One Place</span>
-              </h1>
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
-                Tap any module to instantly launch Food, Cabs, Groceries, Courier or Construction.
-              </p>
-
-              {/* Search Bar */}
-              {activeModules.length > 3 && (
-                <div className="pt-2 max-w-sm mx-auto">
-                  <div className="relative flex items-center">
-                    <Search className="absolute left-3.5 w-4 h-4 text-slate-400 pointer-events-none" />
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search services (food, taxi, grocery, porter)..."
-                      className="w-full pl-9 pr-3 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 shadow-2xs"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Modules Grid — Responsive 2 Columns in App View */}
-            {modulesLoading ? (
-              <div className="grid grid-cols-2 gap-3">
-                {[1, 2, 3, 4, 5, 6].map((i) => (
-                  <div key={i} className="h-44 rounded-3xl bg-slate-100 dark:bg-slate-800 animate-pulse" />
-                ))}
-              </div>
-            ) : filteredModules.length === 0 ? (
-              <div className="text-center py-10 bg-slate-50 dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6">
-                <Compass className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">No Services Found</h3>
-                <p className="text-xs text-slate-500 mt-1">No active modules match "{searchQuery}".</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-3">
-                {filteredModules.map((item, idx) => {
-                  const IconComponent = item.icon;
-                  return (
-                    <motion.div
-                      key={item.id}
-                      initial={{ opacity: 0, y: 15 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.03 * idx }}
-                      onClick={() => handleSelectModule(item)}
-                      className="group cursor-pointer flex flex-col h-full"
+                  <span className="block">
+                    <span className="block text-[17px] font-semibold leading-tight">{item.title}</span>
+                    <span className="mt-1 block text-[12px] leading-snug" style={{ color: INK_SOFT }}>
+                      {item.tagline}
+                    </span>
+                    <span
+                      className="mt-3 flex items-center gap-1.5 text-[12px] font-semibold"
+                      style={{ color: item.labelColor }}
                     >
-                      <div className={`relative flex-1 ${item.bgLight} border ${item.borderColor} rounded-3xl p-3.5 flex flex-col justify-between shadow-2xs hover:shadow-md transition-all duration-200`}>
-                        
-                        {/* Badge */}
-                        <div className="flex items-center justify-between gap-1 mb-2.5">
-                          <span className={`text-[9.5px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded-full truncate max-w-[90px] ${item.badgeColor}`}>
-                            {item.badgeText}
-                          </span>
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                        </div>
-
-                        {/* Icon & Title */}
-                        <div className="space-y-2 mb-2">
-                          <div className={`w-10 h-10 ${item.iconBg} rounded-2xl flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform`}>
-                            <IconComponent className="w-5 h-5 stroke-[2.2]" />
-                          </div>
-                          <div>
-                            <h3 className="text-sm font-black text-slate-900 dark:text-white truncate group-hover:text-orange-600 transition-colors">
-                              {item.title}
-                            </h3>
-                            <p className="text-[10.5px] font-bold text-slate-500 dark:text-slate-400 truncate">
-                              {item.tagline}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Action CTA */}
-                        <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800/80 flex items-center justify-between mt-auto">
-                          <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
-                            Open <ArrowRight className="w-3 h-3 text-orange-500" />
-                          </span>
-                          <div className="w-6 h-6 rounded-full bg-white dark:bg-slate-800 group-hover:bg-orange-500 flex items-center justify-center shadow-2xs transition-colors">
-                            <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-colors" />
-                          </div>
-                        </div>
-
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Trust Highlights */}
-            <div className="pt-3">
-              <div className="bg-slate-50 dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-4 space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-orange-100 dark:bg-orange-950/60 text-orange-600 flex items-center justify-center shrink-0">
-                    <ShieldCheck className="w-4.5 h-4.5" />
-                  </div>
-                  <div>
-                    <h4 className="font-extrabold text-xs text-slate-900 dark:text-white">Verified SMSPRO Partners</h4>
-                    <p className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Top rated vendors, drivers & technicians</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center shrink-0">
-                    <Zap className="w-4.5 h-4.5" />
-                  </div>
-                  <div>
-                    <h4 className="font-extrabold text-xs text-slate-900 dark:text-white">Instant Fulfillment</h4>
-                    <p className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Real-time booking & live tracking</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-blue-100 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center shrink-0">
-                    <CheckCircle2 className="w-4.5 h-4.5" />
-                  </div>
-                  <div>
-                    <h4 className="font-extrabold text-xs text-slate-900 dark:text-white">Unified SMSPRO Account</h4>
-                    <p className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Single wallet & order history</p>
-                  </div>
-                </div>
-              </div>
+                      Open
+                      <span aria-hidden="true" className="transition-transform group-hover:translate-x-1">→</span>
+                    </span>
+                  </span>
+                </motion.button>
+              ))}
             </div>
-          </main>
-        </div>
+          )}
+        </main>
+      </div>
 
-      {/* Bottom Footer */}
-      <footer className="py-4 border-t border-slate-200/80 dark:border-slate-800 text-center text-[11px] font-semibold text-slate-400 bg-slate-50/50 dark:bg-slate-900/50">
-        <p>&copy; 2026 SMSPRO Platform. All rights reserved.</p>
+      <footer
+        className="px-5 py-5 text-center text-[11.5px]"
+        style={{ color: INK_SOFT, borderTop: `1px solid ${LINE}`, fontFamily: FONT }}
+      >
+        &copy; 2026 SMSPRO. All rights reserved.
       </footer>
     </AppMobileFrame>
   );
