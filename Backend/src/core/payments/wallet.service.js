@@ -35,10 +35,15 @@ export async function creditWallet({
 
 /**
  * Debit an entity's wallet.
+ *
+ * `allowNegative` — see `transaction.service.js#recordTransactionInSession` for
+ * exactly what this is for and why it is opt-in. Leave it false unless you are
+ * implementing that exact kind of fee.
  */
 export async function debitWallet({
     entityType, entityId, amount, description,
     category = 'other', orderId, paymentId, metadata, module = 'food',
+    allowNegative = false,
 }) {
     return recordTransaction({
         entityType,
@@ -51,6 +56,7 @@ export async function debitWallet({
         paymentId: paymentId ? String(paymentId) : null,
         metadata,
         module,
+        allowNegative,
     });
 }
 

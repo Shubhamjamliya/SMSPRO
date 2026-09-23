@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
-  ArrowLeft, BookmarkPlus, Check, MessageCircleQuestion, Plus, Save, Send, Trash2, X,
+  ArrowLeft, BookmarkPlus, Check, MessageCircleQuestion, PartyPopper, Plus, Save, Send, Trash2, X,
 } from "lucide-react";
 import contractorApi from "../services/contractorApi";
 import { fullMoney, shortDate, QUOTE_STATUS_LABEL } from "../../shared/format";
@@ -33,8 +33,9 @@ export default function QuotationBuilder() {
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [templateName, setTemplateName] = useState("");
-  const [dialog, setDialog] = useState(null); // 'template' | { queryId }
+  const [dialog, setDialog] = useState(null); // 'template' | 'decline' | { queryId }
   const [answer, setAnswer] = useState("");
+  const [declineReason, setDeclineReason] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -156,6 +157,39 @@ export default function QuotationBuilder() {
     }
   };
 
+  /** The customer accepted — this is the contractor's half of the handshake. */
+  const confirmProject = async () => {
+    setBusy(true);
+    try {
+      const result = await contractorApi.confirmQuotation(id);
+      toast.success("Project started");
+      if (result?.project?._id) {
+        navigate(`/contractor/projects/${result.project._id}`);
+      } else {
+        await load();
+      }
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not confirm"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const declineProject = async () => {
+    setBusy(true);
+    try {
+      await contractorApi.declineQuotation(id, declineReason.trim());
+      toast.success("Told the customer you can't take this on");
+      setDialog(null);
+      setDeclineReason("");
+      await load();
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not send"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (loading || !q) {
     return (
       <div className="min-h-screen bg-white px-4 py-6">
@@ -168,6 +202,10 @@ export default function QuotationBuilder() {
   }
 
   const unanswered = (q.queries || []).filter((x) => !x.answeredAt);
+  const confirmation = q.contractorConfirmation?.status;
+  const needsConfirmation = q.status === "accepted" && (!confirmation || confirmation === "pending");
+  const confirmed = q.status === "accepted" && confirmation === "accepted";
+  const declined = q.status === "accepted" && confirmation === "declined";
 
   return (
     <div className="min-h-screen bg-white pb-32">
@@ -226,6 +264,63 @@ export default function QuotationBuilder() {
           <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 p-3.5">
             <p className="text-sm font-bold text-blue-900">Customer asked for changes</p>
             <p className="mt-1 text-[13px] leading-relaxed text-blue-800">{q.revisionRequest}</p>
+          </div>
+        ) : null}
+
+        {/* The customer accepted — this is the contractor's half of the handshake. */}
+        {needsConfirmation ? (
+          <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 p-3.5">
+            <p className="text-sm font-bold text-emerald-900">Customer accepted this quotation</p>
+            <p className="mt-1 text-[13px] leading-relaxed text-emerald-800">
+              Locked at {fullMoney(q.total)}. Confirm to start the project, or let them know now if you
+              can&apos;t take it on.
+            </p>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={confirmProject}
+                disabled={busy}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 py-2.5 text-[13px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                <Check className="h-4 w-4" /> {busy ? "…" : "Confirm & start project"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDialog("decline")}
+                disabled={busy}
+                className="shrink-0 rounded-lg border border-emerald-300 px-4 py-2.5 text-[13px] font-semibold text-emerald-800 hover:bg-emerald-100"
+              >
+                Can&apos;t take it
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {confirmed ? (
+          <div className="mb-5 flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 p-3.5">
+            <PartyPopper className="h-5 w-5 shrink-0 text-emerald-600" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-emerald-900">Project started</p>
+              <p className="mt-0.5 text-[13px] text-emerald-800">This is now a live project.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate("/contractor/projects")}
+              className="shrink-0 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-[12px] font-semibold text-emerald-700 hover:bg-emerald-100"
+            >
+              View
+            </button>
+          </div>
+        ) : null}
+
+        {declined ? (
+          <div className="mb-5 rounded-xl border border-gray-200 bg-gray-50 p-3.5">
+            <p className="text-sm font-bold text-gray-900">You told the customer you can&apos;t take this on</p>
+            {q.contractorConfirmation?.declineReason ? (
+              <p className="mt-1 text-[13px] leading-relaxed text-gray-600">
+                {q.contractorConfirmation.declineReason}
+              </p>
+            ) : null}
           </div>
         ) : null}
 
@@ -551,18 +646,42 @@ export default function QuotationBuilder() {
           <div className="w-full rounded-t-2xl bg-white p-5 sm:max-w-sm sm:rounded-2xl">
             <div className="mb-3 flex items-start justify-between gap-3">
               <h3 className="text-base font-bold text-gray-900">
-                {dialog === "template" ? "Save as a template" : "Reply to the customer"}
+                {dialog === "template" ? "Save as a template"
+                  : dialog === "decline" ? "Tell the customer why"
+                    : "Reply to the customer"}
               </h3>
               <button
                 type="button"
-                onClick={() => setDialog(null)}
+                onClick={() => { setDialog(null); setDeclineReason(""); }}
                 className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            {dialog === "template" ? (
+            {dialog === "decline" ? (
+              <>
+                <p className="mb-2.5 text-[13px] leading-relaxed text-gray-600">
+                  This tells the customer you can&apos;t take on {q.quotationNumber}. It does not undo
+                  their acceptance — they will need to sort out a new quote.
+                </p>
+                <textarea
+                  className={inputClass}
+                  rows={3}
+                  placeholder="Reason (optional)"
+                  value={declineReason}
+                  onChange={(e) => setDeclineReason(e.target.value)}
+                />
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={declineProject}
+                  className="mt-3 w-full rounded-xl bg-red-600 py-3 text-[15px] font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  {busy ? "…" : "Send"}
+                </button>
+              </>
+            ) : dialog === "template" ? (
               <>
                 <p className="mb-2.5 text-[13px] leading-relaxed text-gray-600">
                   Reuse these sections, rates and stages next time — a similar job then takes

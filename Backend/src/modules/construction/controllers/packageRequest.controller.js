@@ -12,7 +12,7 @@ import {
   validateAssignDto,
 } from '../validators/packageRequest.validator.js';
 import * as visits from '../services/packageVisit.service.js';
-import { listInbox, markInboxRead } from '../services/notify.service.js';
+import { listInbox, markInboxRead, dismissAllInbox } from '../services/notify.service.js';
 import {
   validateStartJourneyDto,
   validateArrivalDto,
@@ -116,6 +116,11 @@ export const markContractorNotificationsReadController = wrap(async (req, res) =
   return sendResponse(res, 200, 'Notifications updated', inbox);
 });
 
+export const clearContractorNotificationsController = wrap(async (req, res) => {
+  const inbox = await dismissAllInbox(req.user.userId);
+  return sendResponse(res, 200, 'Notifications cleared', inbox);
+});
+
 // ---------- Contractor: the site visit ----------
 
 export const listContractorAssignedVisitsController = wrap(async (req, res) => {
@@ -148,6 +153,19 @@ export const saveVisitReportController = wrap(async (req, res) => {
   const data = validateVisitReportDto(req.body);
   const request = await visits.saveVisitReport(req.user.userId, id, data);
   return sendResponse(res, 200, data.submit ? 'Report sent to the office' : 'Draft saved', { request });
+});
+
+/** The customer accepted the contract — this is the contractor's half of the handshake. */
+export const confirmPackageContractController = wrap(async (req, res) => {
+  const id = validateObjectId(req.params.id, 'request id');
+  const request = await visits.confirmContractByContractor(req.user.userId, id);
+  return sendResponse(res, 200, 'Contract confirmed', { request });
+});
+
+export const declinePackageContractController = wrap(async (req, res) => {
+  const id = validateObjectId(req.params.id, 'request id');
+  const request = await visits.declineContractByContractor(req.user.userId, id, validateContractResponseDto(req.body));
+  return sendResponse(res, 200, 'Contract declined', { request });
 });
 
 // ---------- Customer: following the visit ----------

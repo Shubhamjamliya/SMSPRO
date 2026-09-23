@@ -45,9 +45,12 @@ import {
   listContractorAssignedVisitsController,
   listContractorNotificationsController,
   markContractorNotificationsReadController,
+  clearContractorNotificationsController,
   startJourneyController,
   confirmArrivalController,
   saveVisitReportController,
+  confirmPackageContractController,
+  declinePackageContractController,
   listMyPackageRequestsController,
   getMyPackageRequestController,
   regenerateVisitOtpController,
@@ -78,9 +81,17 @@ import {
   updateMaterialStatusController,
   deleteMaterialController,
   listMaterialRequestsController,
-  updateMaterialRequestStatusController,
+  updateMaterialRequestNoteController,
+  sendMaterialQuotationController,
+  dispatchMaterialRequestController,
+  deliverMaterialRequestController,
+  cancelMaterialRequestController,
   getCustomerMaterialsController,
   createMaterialRequestController,
+  listMyMaterialRequestsController,
+  getMyMaterialRequestController,
+  acceptMaterialQuotationController,
+  rejectMaterialQuotationController,
 } from '../controllers/material.controller.js';
 import {
   getSettingsController,
@@ -139,7 +150,6 @@ import {
   leadStatsController,
   acceptLeadController,
   declineLeadController,
-  listMyJobsController,
   contractorProposeVisitController,
   contractorConfirmVisitController,
   contractorCancelVisitController,
@@ -153,6 +163,8 @@ import {
   answerQueryController,
   listMyQuotationsController,
   getContractorQuotationController,
+  confirmQuotationController,
+  declineQuotationController,
   listTemplatesController,
   createTemplateController,
   saveAsTemplateController,
@@ -339,12 +351,17 @@ router.post('/contractor/package-requests/:id/decline', ...contractorAuth, decli
 // The bell in the contractor's header: recent notifications and marking them read.
 router.get('/contractor/notifications', ...contractorAuth, listContractorNotificationsController);
 router.post('/contractor/notifications/read', ...contractorAuth, markContractorNotificationsReadController);
+router.delete('/contractor/notifications', ...contractorAuth, clearContractorNotificationsController);
 // The booking page: start the journey, confirm arrival with the customer's OTP, send the report.
 router.get('/contractor/package-visits', ...contractorAuth, listContractorAssignedVisitsController);
 router.get('/contractor/package-requests/:id', ...contractorAuth, getContractorPackageRequestController);
 router.post('/contractor/package-requests/:id/start-journey', ...contractorAuth, startJourneyController);
 router.post('/contractor/package-requests/:id/verify-otp', ...contractorAuth, confirmArrivalController);
 router.put('/contractor/package-requests/:id/report', ...contractorAuth, saveVisitReportController);
+// The customer accepted the contract — the contractor's own confirmation, which is what
+// actually refunds their site-visit acceptance fee (see packageVisit.service.js#respond).
+router.post('/contractor/package-requests/:id/contract/confirm', ...contractorAuth, confirmPackageContractController);
+router.post('/contractor/package-requests/:id/contract/decline', ...contractorAuth, declinePackageContractController);
 
 // Customers following their booking: contractor, OTP, and the contract to accept.
 router.get('/package-requests', ...customerAuth, listMyPackageRequestsController);
@@ -356,6 +373,10 @@ router.get('/banners', ...customerAuth, getCustomerBannersController);
 router.get('/budget-services', ...customerAuth, getCustomerBudgetServicesController);
 router.get('/materials', ...customerAuth, getCustomerMaterialsController);
 router.post('/material-requests', ...customerAuth, createMaterialRequestController);
+router.get('/material-requests', ...customerAuth, listMyMaterialRequestsController);
+router.get('/material-requests/:id', ...customerAuth, getMyMaterialRequestController);
+router.post('/material-requests/:id/quotation/accept', ...customerAuth, acceptMaterialQuotationController);
+router.post('/material-requests/:id/quotation/reject', ...customerAuth, rejectMaterialQuotationController);
 
 // ---------- Admin: categories (BRD A8) ----------
 
@@ -656,11 +677,39 @@ router.get(
   listMaterialRequestsController,
 );
 router.patch(
-  '/admin/material-requests/:id/status',
+  '/admin/material-requests/:id/note',
   ...adminAuth,
   checkPermission('construction::settings', 'edit'),
   requireModuleEnabled,
-  updateMaterialRequestStatusController,
+  updateMaterialRequestNoteController,
+);
+router.post(
+  '/admin/material-requests/:id/quotation',
+  ...adminAuth,
+  checkPermission('construction::settings', 'edit'),
+  requireModuleEnabled,
+  sendMaterialQuotationController,
+);
+router.post(
+  '/admin/material-requests/:id/dispatch',
+  ...adminAuth,
+  checkPermission('construction::settings', 'edit'),
+  requireModuleEnabled,
+  dispatchMaterialRequestController,
+);
+router.post(
+  '/admin/material-requests/:id/deliver',
+  ...adminAuth,
+  checkPermission('construction::settings', 'edit'),
+  requireModuleEnabled,
+  deliverMaterialRequestController,
+);
+router.post(
+  '/admin/material-requests/:id/cancel',
+  ...adminAuth,
+  checkPermission('construction::settings', 'edit'),
+  requireModuleEnabled,
+  cancelMaterialRequestController,
 );
 
 // ---------- Admin: module settings (§7 of the blueprint) ----------
@@ -813,7 +862,6 @@ router.get('/contractor/leads', ...contractorAuth, listLeadsController);
 router.get('/contractor/leads/stats', ...contractorAuth, leadStatsController);
 router.patch('/contractor/leads/:id/accept', ...contractorAuth, acceptLeadController);
 router.patch('/contractor/leads/:id/decline', ...contractorAuth, declineLeadController);
-router.get('/contractor/jobs', ...contractorAuth, listMyJobsController);
 
 router.get('/contractor/site-visits', ...contractorAuth, listMyVisitsController);
 router.post('/contractor/site-visits', ...contractorAuth, contractorProposeVisitController);
@@ -830,6 +878,10 @@ router.post('/contractor/quotations/:id/send', ...contractorAuth, sendQuotationC
 router.post('/contractor/quotations/:id/revise', ...contractorAuth, createRevisionController);
 router.post('/contractor/quotations/:id/queries/:queryId/answer', ...contractorAuth, answerQueryController);
 router.post('/contractor/quotations/:id/save-as-template', ...contractorAuth, saveAsTemplateController);
+// The customer accepted (see /enquiries/:id/quotations/:quotationId/accept above) — this is the
+// contractor's half of the handshake. Only after this does the project exist.
+router.post('/contractor/quotations/:id/confirm', ...contractorAuth, confirmQuotationController);
+router.post('/contractor/quotations/:id/decline', ...contractorAuth, declineQuotationController);
 
 router.get('/contractor/templates', ...contractorAuth, listTemplatesController);
 router.post('/contractor/templates', ...contractorAuth, createTemplateController);

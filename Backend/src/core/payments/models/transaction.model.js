@@ -83,6 +83,10 @@ const transactionSchema = new mongoose.Schema(
                 'escrow_release',
                 'escrow_refund',
                 'retention_release',
+                // Construction — the minimum fee a contractor pays the platform the
+                // moment they accept a site visit request (can push their wallet
+                // negative; see `allowNegative` on the debit).
+                'site_visit_acceptance_fee',
                 'other'
             ],
             default: 'other'

@@ -118,6 +118,11 @@ export const getPublicSettings = async () => {
       defectLiabilityDays: s.money?.defectLiabilityDays,
       siteVisitCharged: s.money?.siteVisitCharged === true,
       siteVisitFee: s.money?.siteVisitCharged ? s.money?.siteVisitFee : 0,
+      // Surfaced here for parity with the rest of `money`; contractors actually see
+      // this figure on the package-request list/detail (`toContractorView`), since
+      // their session cannot reach this customer-only `/construction/settings` route.
+      siteVisitAcceptanceFeeEnabled: s.money?.siteVisitAcceptanceFeeEnabled === true,
+      siteVisitAcceptanceFee: s.money?.siteVisitAcceptanceFeeEnabled ? s.money?.siteVisitAcceptanceFee : 0,
       variationOrdersEnabled: s.money?.variationOrdersEnabled !== false,
     },
     documentTypes: s.documentTypes || [],

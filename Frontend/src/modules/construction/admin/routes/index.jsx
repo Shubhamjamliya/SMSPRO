@@ -95,7 +95,19 @@ function ConstructionAdminRoutesInner() {
         element={<Packages key="commercial" segment="commercial" />}
       />
       <Route path="budget-friendly" element={<BudgetServices />} />
-      <Route path="budget-requests" element={<Enquiries key="budget" budgetOnly />} />
+      <Route
+        path="budget-friendly/requests"
+        element={<PackageRequests key="budget" segment="budget_service" />}
+      />
+      <Route
+        path="budget-friendly/quotations"
+        element={<PackageQuotations key="budget" segment="budget_service" />}
+      />
+      {/* The old enquiry-based budget requests list, kept so bookmarks still land somewhere. */}
+      <Route
+        path="budget-requests"
+        element={<Navigate to="/admin/construction/budget-friendly/requests" replace />}
+      />
       <Route path="materials" element={<Materials />} />
       <Route path="material-requests" element={<MaterialRequests />} />
       <Route path="settings" element={<Settings />} />

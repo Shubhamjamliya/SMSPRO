@@ -30,6 +30,7 @@ const EMPTY = {
   badge: "",
   price: "",
   unit: "per sq.ft",
+  visitingFee: 0,
   typicalDurationText: "",
   description: "",
   features: [],
@@ -58,25 +59,22 @@ function Thumb({ row }) {
 }
 
 /**
- * Whether customers can act on a card. Only a card linked to a live catalogue
- * service leads into the enquiry flow; anything else is a display-only card, and
- * the list says so instead of leaving admin to find out from a customer.
+ * The optional catalogue service linked for reference. Every card is bookable on
+ * its own regardless of this — it no longer gates anything customer-facing.
  */
 function LinkStatus({ row }) {
   const linked = row.catalogueServiceId;
   if (!linked) {
-    return (
-      <span className="text-xs font-medium text-amber-600">Not linked — display only</span>
-    );
+    return <span className="text-xs text-gray-400">—</span>;
   }
   const live = !linked.isDeleted && linked.status === "active";
   return (
     <span
       className={
         "inline-flex items-center gap-1 text-xs font-medium " +
-        (live ? "text-emerald-700" : "text-red-600")
+        (live ? "text-gray-600" : "text-red-600")
       }
-      title={live ? "Customers can enquire through this service" : "The linked service is switched off"}
+      title={live ? linked.name : "The linked service is switched off"}
     >
       <Link2 className="h-3 w-3 shrink-0" />
       <span className="truncate">{live ? linked.name : `${linked.name} (unavailable)`}</span>
@@ -142,6 +140,7 @@ export default function BudgetServices() {
       badge: row.badge || "",
       price: row.price ?? "",
       unit: row.unit || "",
+      visitingFee: row.visitingFee ?? 0,
       typicalDurationText: row.typicalDurationText || "",
       description: row.description || "",
       features: row.features || [],
@@ -163,6 +162,10 @@ export default function BudgetServices() {
         nextErrors.price = "Use a whole number of rupees, or leave it empty";
       }
     }
+    const fee = Number(form.visitingFee);
+    if (Number.isNaN(fee) || !Number.isInteger(fee) || fee < 0) {
+      nextErrors.visitingFee = "Use a whole number of rupees";
+    }
 
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) {
@@ -178,6 +181,7 @@ export default function BudgetServices() {
         badge: form.badge.trim(),
         price: form.price === "" ? null : Number(form.price),
         unit: form.unit.trim(),
+        visitingFee: Number(form.visitingFee) || 0,
         typicalDurationText: form.typicalDurationText.trim(),
         description: form.description.trim(),
         features: form.features,
@@ -251,7 +255,7 @@ export default function BudgetServices() {
     { key: "price", header: "Price", cell: priceCell },
     {
       key: "link",
-      header: "Enquiries go to",
+      header: "Catalogue service",
       cell: (row) => <LinkStatus row={row} />,
     },
     { key: "status", header: "Status", cell: (row) => <StatusBadge status={row.status} /> },
@@ -314,7 +318,7 @@ export default function BudgetServices() {
       <PageHeader
         eyebrow="Construction · Budget Friendly"
         title="Budget Friendly Services"
-        description="The offerings shown under Budget Friendly in the app. They are kept separate from the main service catalogue. Link each one to a catalogue service so customers can send an enquiry from it."
+        description="The offerings shown under Budget Friendly in the app. Customers book them the same way as a Residential/Commercial package: fill in the site details, pay the visiting fee if there is one, and the request goes to contractors near the site."
         actions={
           <Button onClick={openCreate}>
             <Plus className="mr-1.5 h-4 w-4" /> Add service
@@ -398,6 +402,18 @@ export default function BudgetServices() {
             </div>
 
             <Input
+              label="Site visiting fee (₹)"
+              type="number"
+              min={0}
+              step={1}
+              helperText="Charged before the request is sent to contractors. 0 means the visit is free."
+              value={form.visitingFee}
+              error={errors.visitingFee}
+              onChange={(e) => setField("visitingFee", e.target.value)}
+              disabled={saving}
+            />
+
+            <Input
               label="Typical duration"
               placeholder="e.g. 8 to 12 months"
               value={form.typicalDurationText}
@@ -427,7 +443,7 @@ export default function BudgetServices() {
 
             <label className="block text-sm">
               <span className="mb-1.5 block text-sm font-medium text-gray-700">
-                Send enquiries to
+                Related catalogue service (optional)
               </span>
               <select
                 className={CN_ADMIN_SELECT_CLASS}
@@ -435,7 +451,7 @@ export default function BudgetServices() {
                 onChange={(e) => setField("catalogueServiceId", e.target.value)}
                 disabled={saving}
               >
-                <option value="">Not linked — customers can view but not enquire</option>
+                <option value="">None</option>
                 {linkOptions.map((service) => (
                   <option key={service._id} value={service._id}>
                     {service.name}
@@ -445,8 +461,9 @@ export default function BudgetServices() {
                 ))}
               </select>
               <span className="mt-1 block text-xs text-gray-500">
-                A catalogue service from Catalogue → Services. Enquiries, contractor matching and
-                quotes all run through it.
+                Customers book this card directly — the site visit is offered to contractors the
+                same way as a Residential/Commercial package. Linking a catalogue service here is
+                just for your own reference and does not affect the booking.
               </span>
             </label>
 

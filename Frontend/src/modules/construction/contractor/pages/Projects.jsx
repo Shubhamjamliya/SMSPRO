@@ -20,6 +20,7 @@ export default function ContractorProjects() {
   const navigate = useNavigate();
   const [rows, setRows] = useState([]);
   const [cashRequests, setCashRequests] = useState([]);
+  const [pendingConfirmations, setPendingConfirmations] = useState([]);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -28,7 +29,7 @@ export default function ContractorProjects() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [projRes, cashRes] = await Promise.all([
+      const [projRes, cashRes, quoteRes] = await Promise.all([
         contractorApi.listProjects({ limit: 50, ...(status ? { status } : {}) }).catch((err) => {
           console.error("Failed to load contractor projects:", err);
           return { rows: [] };
@@ -37,10 +38,15 @@ export default function ContractorProjects() {
           console.error("Failed to load contractor cash requests:", err);
           return [];
         }),
+        // A customer accepted, waiting on us to confirm before it becomes a project.
+        contractorApi.listQuotations().catch(() => []),
       ]);
       const rowsList = projRes?.rows || (Array.isArray(projRes) ? projRes : (projRes?.data || []));
       setRows(rowsList);
       setCashRequests(Array.isArray(cashRes) ? cashRes : (cashRes?.requests || []));
+      setPendingConfirmations((quoteRes || []).filter(
+        (q) => q.status === "accepted" && (!q.contractorConfirmation || q.contractorConfirmation.status === "pending"),
+      ));
       setError("");
     } catch (err) {
       setError(err?.response?.data?.message || "Could not load your projects");
@@ -106,6 +112,34 @@ export default function ContractorProjects() {
 
       {error && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
 
+      {/* Customers who accepted a quotation — these become projects only once we confirm. */}
+      {pendingConfirmations.length > 0 && (
+        <section className="rounded-2xl border border-emerald-300 bg-emerald-50 p-4 space-y-3 shadow-xs">
+          <h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-emerald-950">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+            Waiting on your confirmation ({pendingConfirmations.length})
+          </h3>
+          <div className="space-y-2">
+            {pendingConfirmations.map((q) => (
+              <button
+                key={q._id}
+                type="button"
+                onClick={() => navigate(`/contractor/quotations/${q._id}`)}
+                className="flex w-full items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-white p-3.5 text-left shadow-2xs hover:border-emerald-300"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-gray-900">
+                    {q.enquiryId?.serviceId?.name || q.title || "Quotation"}
+                  </p>
+                  <p className="mt-0.5 font-mono text-[11px] text-gray-400">{q.quotationNumber}</p>
+                </div>
+                <p className="shrink-0 text-sm font-bold tabular-nums text-emerald-700">{fullMoney(q.total)}</p>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Pending Cash Payment Requests from Customers */}
       {cashRequests.filter(c => c.status === "pending_contractor_approval").length > 0 && (
         <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4 space-y-3 shadow-xs">
@@ -157,7 +191,7 @@ export default function ContractorProjects() {
         </div>
       ) : rows.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-8 text-center text-sm text-gray-500">
-          No projects here yet. A project begins when a customer accepts your quotation.
+          No projects here yet. When a customer accepts your quotation, confirm it to turn it into a project.
         </p>
       ) : (
         <ul className="space-y-3">

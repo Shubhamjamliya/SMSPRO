@@ -426,6 +426,24 @@ export default function Settings() {
             onChange={(v) => setIn("money", "variationOrdersEnabled", v)}
             hint="Without this the agreed price cannot legitimately change, so scope changes get settled off-platform in cash and your project record stops being true."
           />
+
+          <Toggle
+            label="Charge the contractor to accept a site visit"
+            checked={mn.siteVisitAcceptanceFeeEnabled === true}
+            onChange={(v) => setIn("money", "siteVisitAcceptanceFeeEnabled", v)}
+            hint="A minimum amount taken from the contractor's wallet the moment they accept a site visit request — separate from the customer's site visit fee above. If their balance is too low it goes negative and is recovered from their next payout, so it never blocks a new contractor's first job."
+          />
+          {mn.siteVisitAcceptanceFeeEnabled ? (
+            <div className="grid gap-4 pl-6 sm:grid-cols-2">
+              <Input
+                label="Site visit acceptance fee (₹)"
+                type="number"
+                min={1}
+                value={mn.siteVisitAcceptanceFee ?? 0}
+                onChange={(e) => setIn("money", "siteVisitAcceptanceFee", e.target.value)}
+              />
+            </div>
+          ) : null}
         </div>
       </SectionCard>
 

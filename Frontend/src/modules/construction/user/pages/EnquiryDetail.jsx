@@ -195,9 +195,23 @@ export default function EnquiryDetail() {
             <p className="mt-2 text-xs font-bold text-emerald-900">
               {fullMoney(acceptedQuote.total)} · Quote Ref: {acceptedQuote.quotationNumber}
             </p>
-            <p className="mt-2 text-xs leading-relaxed text-emerald-700 font-medium">
-              Your project workspace is live under the <strong>Projects</strong> tab to track stage approvals and escrow releases.
-            </p>
+            {acceptedQuote.contractorConfirmation?.status === "accepted" ? (
+              <p className="mt-2 text-xs leading-relaxed text-emerald-700 font-medium">
+                {acceptedQuote.contractorId?.businessName} confirmed — your project workspace is live under
+                the <strong>Projects</strong> tab to track stage approvals and escrow releases.
+              </p>
+            ) : acceptedQuote.contractorConfirmation?.status === "declined" ? (
+              <p className="mt-2 text-xs leading-relaxed text-red-700 font-medium">
+                {acceptedQuote.contractorId?.businessName} was unable to take this on
+                {acceptedQuote.contractorConfirmation.declineReason ? ` — ${acceptedQuote.contractorConfirmation.declineReason}` : "."}
+                {" "}Please contact support or ask for a fresh quote.
+              </p>
+            ) : (
+              <p className="mt-2 text-xs leading-relaxed text-emerald-700 font-medium">
+                Waiting for {acceptedQuote.contractorId?.businessName} to confirm — your project workspace opens
+                as soon as they do.
+              </p>
+            )}
           </div>
         ) : null}
 

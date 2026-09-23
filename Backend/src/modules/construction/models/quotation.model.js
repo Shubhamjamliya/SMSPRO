@@ -85,6 +85,24 @@ const statusHistorySchema = new mongoose.Schema(
   { _id: false },
 );
 
+/**
+ * A customer accepting a quote is only half of the handshake — the contractor
+ * still has to confirm before the enquiry becomes a live project. This tracks
+ * that second step without needing a whole new quotation status: the
+ * quotation itself stays `accepted` (the price and scope are locked, rival
+ * quotes are withdrawn) while this sub-document records whether the
+ * contractor has actually taken it on.
+ */
+const contractorConfirmationSchema = new mongoose.Schema(
+  {
+    status: { type: String, enum: ['pending', 'accepted', 'declined'], default: null },
+    respondedAt: { type: Date, default: null },
+    /** BRD-style courtesy — why the contractor could not take it on after all. */
+    declineReason: { type: String, trim: true, default: '', maxlength: 500 },
+  },
+  { _id: false },
+);
+
 const quotationSchema = new mongoose.Schema(
   {
     quotationNumber: { type: String, unique: true, sparse: true, trim: true },
@@ -146,6 +164,13 @@ const quotationSchema = new mongoose.Schema(
 
     status: { type: String, enum: QUOTATION_STATUSES, default: 'draft', index: true },
     statusHistory: { type: [statusHistorySchema], default: [] },
+
+    /**
+     * Set the moment the customer accepts; null until then. The project is
+     * only created once this flips to `accepted` — see
+     * `quotation.service.js#confirmQuotationByContractor`.
+     */
+    contractorConfirmation: { type: contractorConfirmationSchema, default: null },
 
     sentAt: { type: Date, default: null },
     acceptedAt: { type: Date, default: null },

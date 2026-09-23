@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   Building2, CalendarClock, ChevronRight, FileText, HardHat, Home, Inbox,
-  LogOut, ShieldCheck, User, Wallet, Wrench, X,
+  LogOut, ShieldCheck, User, Wallet, X,
 } from "lucide-react";
 import { clearContractorAuth, getContractorUser } from "../utils/authContractor";
 
@@ -24,7 +24,6 @@ const GROUPS = [
       { to: "/contractor/dashboard", label: "Home", icon: Home, hint: "What needs you today" },
       { to: "/contractor/leads", label: "Enquiries", icon: Inbox, hint: "New work matched to you" },
       { to: "/contractor/package-requests", label: "Package visits", icon: Building2, hint: "Paid site visits near you" },
-      { to: "/contractor/jobs", label: "Jobs", icon: Wrench, hint: "Work you have taken on" },
       { to: "/contractor/visits", label: "Site visits", icon: CalendarClock, hint: "Scheduled and recorded" },
       { to: "/contractor/quotations", label: "Quotations", icon: FileText, hint: "Build and send quotes" },
       { to: "/contractor/projects", label: "Projects", icon: HardHat, hint: "Stages, progress and payment" },

@@ -120,6 +120,15 @@ export async function recordTransactionInSession(session, payload) {
         orderId = null, paymentId = null,
         metadata = undefined, module = 'food',
         countAsEarning = true,
+        // Deliberately opt-in, per call — NOT a general escape hatch. The only
+        // legitimate use today is a platform fee that must be collected the
+        // instant an action happens even though the payee has not earned
+        // enough yet (construction's site-visit acceptance fee): the wallet
+        // goes negative and is netted out automatically the next time this
+        // entity is credited, since balance is just a running total. This must
+        // never be used to debit money that is meant to still be reserved
+        // (that is what `lockedAmount` / the hold service are for).
+        allowNegative = false,
     } = payload;
 
     if (!['credit', 'debit'].includes(type)) throw new Error('type must be credit or debit');
@@ -140,12 +149,14 @@ export async function recordTransactionInSession(session, payload) {
         ? currentBalance + amount
         : currentBalance - amount;
 
-    // Debit guard: prevent negative balance (except admin wallet which can go negative).
+    // Debit guard: prevent negative balance (except admin wallet, and a caller that
+    // has explicitly opted into `allowNegative` — see its doc comment above).
     // Escrow-held money is counted in `balance` but is NOT spendable, so the guard is
-    // against available balance. There is deliberately no override flag: `releaseHold`
-    // decrements `lockedAmount` before calling this, so by the time the debit runs the
-    // money is genuinely free. An escape hatch here is how holds get bypassed later.
-    if (type === 'debit' && entityType !== 'admin') {
+    // against available balance. Beyond that one opt-in, there is deliberately no
+    // override flag: `releaseHold` decrements `lockedAmount` before calling this, so
+    // by the time the debit runs the money is genuinely free. A general escape hatch
+    // here is how holds get bypassed later.
+    if (type === 'debit' && entityType !== 'admin' && !allowNegative) {
         if (currentBalance - lockedAmount - amount < 0) {
             if (lockedAmount > 0 && currentBalance - amount >= 0) {
                 throw new Error(

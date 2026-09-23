@@ -6,7 +6,8 @@ import { logger } from '../../../utils/logger.js';
 import { ContractorProfile } from '../models/contractorProfile.model.js';
 import { PackageRequest, MAX_OTP_ATTEMPTS } from '../models/packageRequest.model.js';
 import { notify, notifyAdmins } from './notify.service.js';
-import { toContractorView } from './packageDispatch.service.js';
+import { toContractorView, getAcceptanceFeeConfig } from './packageDispatch.service.js';
+import { creditWallet, debitWallet } from '../../../core/payments/wallet.service.js';
 
 /**
  * The site visit itself, after a contractor has the request:
@@ -36,9 +37,11 @@ const audit = (action, extra) => recordAudit({
 
 const reference = (id) => `#${String(id).slice(-6).toUpperCase()}`;
 
-const segmentPath = (request) => `/admin/construction/end-to-end/${
-  request?.package?.segment === 'commercial' ? 'commercial' : 'residential'
-}/requests`;
+const segmentPath = (request) => {
+  const segment = request?.package?.segment;
+  if (segment === 'budget_service') return '/admin/construction/budget-friendly/requests';
+  return `/admin/construction/end-to-end/${segment === 'commercial' ? 'commercial' : 'residential'}/requests`;
+};
 
 const customerLink = (id) => `/construction/site-visits/${id}`;
 const quotationLink = (id) => `/construction/quotations/visit/${id}`;
@@ -81,8 +84,8 @@ const tell = (payload) => notify({ source: 'NEW_LEAD', ...payload }).catch(() =>
 const reportView = (report) => (report ? { ...report } : null);
 
 /** One request as its contractor sees it, with the visit and quotation state. Assumes it is theirs. */
-const contractorDetailView = (request, contractorId) => {
-  const view = toContractorView(request, contractorId);
+const contractorDetailView = (request, contractorId, prospectiveFee = 0) => {
+  const view = toContractorView(request, contractorId, new Date(), prospectiveFee);
   if (!view.assignedToMe) return { ...view, visit: null, contract: null };
 
   return {
@@ -108,6 +111,14 @@ const contractorDetailView = (request, contractorId) => {
         sentAt: request.contract.sentAt,
         validUntil: request.contract.validUntil || null,
         respondedAt: request.contract.respondedAt,
+        // The contractor's own half of the handshake — see `respond()`/`confirmContractByContractor`.
+        contractorConfirmation: request.contract.contractorConfirmation
+          ? {
+            status: request.contract.contractorConfirmation.status,
+            respondedAt: request.contract.contractorConfirmation.respondedAt || null,
+            declineNote: request.contract.contractorConfirmation.declineNote || '',
+          }
+          : null,
       }
       : null,
   };
@@ -118,7 +129,8 @@ export const getContractorRequestDetail = async (contractorId, requestId) => {
   const request = await PackageRequest.findById(requestId).lean();
   const mine = request?.offers?.find((o) => String(o.contractorId) === String(contractorId));
   if (!request || !mine) throw new ValidationError('This request is not available to you');
-  return contractorDetailView(request, contractorId);
+  const { amount: prospectiveFee } = await getAcceptanceFeeConfig();
+  return contractorDetailView(request, contractorId, prospectiveFee);
 };
 
 /**
@@ -330,6 +342,13 @@ const contractView = (contract) => (
       respondedAt: contract.respondedAt,
       responseNote: contract.responseNote || '',
       expired: Boolean(contract.status === 'sent' && contract.validUntil && new Date(contract.validUntil) < new Date()),
+      // Whether the contractor has confirmed yet — see `confirmContractByContractor`.
+      contractorConfirmation: contract.contractorConfirmation
+        ? {
+          status: contract.contractorConfirmation.status,
+          respondedAt: contract.contractorConfirmation.respondedAt || null,
+        }
+        : null,
     }
     : null
 );
@@ -512,7 +531,12 @@ const respond = async (customerId, requestId, accept, { note = '' } = {}) => {
         'contract.status': accept ? 'accepted' : 'rejected',
         'contract.respondedAt': now,
         'contract.responseNote': note,
-        ...(accept ? { status: 'won' } : {}),
+        ...(accept ? {
+          status: 'won',
+          // The customer saying yes is only half of it — the contractor still has
+          // to confirm before work starts and their site-visit fee is refunded.
+          'contract.contractorConfirmation': { status: 'pending', respondedAt: null, declineNote: '' },
+        } : {}),
       },
     },
     { new: true },
@@ -532,11 +556,12 @@ const respond = async (customerId, requestId, accept, { note = '' } = {}) => {
   }
 
   const ref = reference(requestId);
+
   notifyAdmins({
     source: 'NEW_LEAD',
     title: accept ? 'Contract accepted' : 'Contract declined',
     message: accept
-      ? `${updated.contact?.name} accepted ${updated.contract.number} (${ref}) for ₹${Number(updated.contract.price).toLocaleString('en-IN')}.`
+      ? `${updated.contact?.name} accepted ${updated.contract.number} (${ref}) for ₹${Number(updated.contract.price).toLocaleString('en-IN')}. Waiting for the contractor to confirm.`
       : `${updated.contact?.name} declined ${updated.contract.number} (${ref})${note ? `: ${note}` : '.'}`,
     link: segmentPath(updated),
     metadata: { packageRequestId: String(requestId), segment: updated.package?.segment || '' },
@@ -545,9 +570,9 @@ const respond = async (customerId, requestId, accept, { note = '' } = {}) => {
     tell({
       ownerType: 'CONTRACTOR',
       ownerId: String(updated.assignedContractorId),
-      title: accept ? 'The customer accepted the contract' : 'The customer declined the contract',
+      title: accept ? 'Customer accepted — confirm to proceed' : 'The customer declined the contract',
       message: accept
-        ? `${updated.contract.number} was accepted for the ${updated.site?.city} site. The office will be in touch about starting work.`
+        ? `${updated.contract.number} accepted at ₹${Number(updated.contract.price).toLocaleString('en-IN')} for the ${updated.site?.city} site. Confirm it to start work — your site visit fee is refunded once you do.`
         : `${updated.contract.number} was declined. The office will follow up with the customer.`,
       link: contractorLink(requestId),
       metadata: { packageRequestId: String(requestId) },
@@ -564,3 +589,157 @@ const respond = async (customerId, requestId, accept, { note = '' } = {}) => {
 
 export const acceptContract = (customerId, requestId, body) => respond(customerId, requestId, true, body);
 export const declineContract = (customerId, requestId, body) => respond(customerId, requestId, false, body);
+
+// ---------- Contractor: confirm or decline the contract the customer accepted ----------
+
+/**
+ * The second half of the handshake — see `respond()` above. Only now, once the
+ * contractor genuinely confirms, is the site-visit acceptance fee refunded:
+ * a contractor who never confirms (or declines) keeps paying for a visit that
+ * did not turn into real, contractor-committed work. Idempotent: confirming
+ * twice just returns the same already-refunded state rather than erroring.
+ */
+export const confirmContractByContractor = async (contractorId, requestId) => {
+  const now = new Date();
+  const { createProjectFromPackageContract } = await import('./project.service.js');
+
+  const existing = await PackageRequest.findOne({ _id: requestId, assignedContractorId: contractorId }).lean();
+  if (!existing) throw new ValidationError('This request is not assigned to you');
+  if (existing.contract?.contractorConfirmation?.status === 'accepted') {
+    const project = await createProjectFromPackageContract(requestId);
+    return { ...contractorDetailView(existing, contractorId), project };
+  }
+  if (existing.contract?.status !== 'accepted') {
+    throw new ValidationError('There is no accepted contract waiting for your confirmation');
+  }
+
+  const updated = await PackageRequest.findOneAndUpdate(
+    { _id: requestId, assignedContractorId: contractorId, 'contract.status': 'accepted' },
+    {
+      $set: {
+        'contract.contractorConfirmation': { status: 'accepted', respondedAt: now, declineNote: '' },
+      },
+    },
+    { new: true },
+  ).lean();
+  if (!updated) throw new ValidationError('There is no accepted contract waiting for your confirmation');
+
+  const ref = reference(requestId);
+
+  // Earned back now that the contractor has genuinely committed. Best effort —
+  // the confirmation itself is already recorded and must not unwind if this fails.
+  if (updated.acceptanceFee?.amount > 0 && !updated.acceptanceFee?.refundedAt) {
+    try {
+      const feeAmount = updated.acceptanceFee.amount;
+      const { transaction } = await creditWallet({
+        entityType: 'contractor',
+        entityId: String(contractorId),
+        amount: feeAmount,
+        description: `Site visit acceptance fee refunded — ${ref} contract confirmed`,
+        category: 'site_visit_acceptance_fee',
+        module: 'construction',
+        metadata: { packageRequestId: String(requestId) },
+        // A refund of their own fee, not new earnings — must not inflate totalEarnings.
+        countAsEarning: false,
+      });
+      await PackageRequest.updateOne(
+        { _id: requestId },
+        { $set: { 'acceptanceFee.refundedAt': now, 'acceptanceFee.refundTransactionId': transaction._id } },
+      );
+      debitWallet({
+        entityType: 'admin',
+        entityId: 'platform',
+        amount: feeAmount,
+        description: `Site visit acceptance fee refunded to contractor ${contractorId}`,
+        category: 'site_visit_acceptance_fee',
+        module: 'construction',
+        metadata: { packageRequestId: String(requestId), contractorId: String(contractorId) },
+      }).catch((err) => {
+        logger.error(`[construction] admin debit for site visit fee refund failed (${requestId}): ${err.message}`);
+      });
+      updated.acceptanceFee.refundedAt = now;
+    } catch (err) {
+      logger.error(`[construction] site visit acceptance fee refund failed for ${requestId}: ${err.message}`);
+    }
+  }
+
+  // Both sides have now committed — this is a live project, same as the
+  // enquiry pipeline's `confirmQuotationByContractor`. Not wrapped in the
+  // refund's try/catch: a failure here is a real problem the caller needs to
+  // see, not something to swallow.
+  const project = await createProjectFromPackageContract(requestId);
+
+  notify({
+    ownerType: 'USER',
+    ownerId: String(updated.customerId),
+    source: 'PROJECT_STATUS',
+    title: 'Your project has started',
+    message: `${updated.contract.number} confirmed for the ${updated.site?.city} site. Fund it to get moving.`,
+    link: project ? `/construction/projects/${project._id}` : `/construction/site-visits/${requestId}`,
+    metadata: { packageRequestId: String(requestId), projectId: project ? String(project._id) : '' },
+  }).catch(() => {});
+
+  await audit('package_request.contract_confirmed_by_contractor', {
+    entityId: requestId,
+    after: { number: updated.contract.number, projectId: project ? String(project._id) : null },
+    performedBy: { userId: contractorId, role: 'CONTRACTOR', actionAt: now },
+  });
+  logger.info(`[construction] contract ${updated.contract.number} confirmed by contractor`);
+  return { ...contractorDetailView(updated, contractorId), project };
+};
+
+/** The contractor cannot take this on after all. The fee already charged is NOT refunded — see `respond()`'s doc comment. */
+export const declineContractByContractor = async (contractorId, requestId, { note = '' } = {}) => {
+  const now = new Date();
+  const updated = await PackageRequest.findOneAndUpdate(
+    {
+      _id: requestId,
+      assignedContractorId: contractorId,
+      'contract.status': 'accepted',
+      'contract.contractorConfirmation.status': { $ne: 'accepted' },
+    },
+    {
+      $set: {
+        'contract.contractorConfirmation': { status: 'declined', respondedAt: now, declineNote: note },
+      },
+    },
+    { new: true },
+  ).lean();
+
+  if (!updated) {
+    const existing = await PackageRequest.findOne({ _id: requestId, assignedContractorId: contractorId }).select('contract').lean();
+    if (!existing) throw new ValidationError('This request is not assigned to you');
+    if (existing.contract?.contractorConfirmation?.status === 'accepted') {
+      throw new ValidationError('You have already confirmed this contract');
+    }
+    throw new ValidationError('There is no accepted contract waiting for your response');
+  }
+
+  const ref = reference(requestId);
+  notify({
+    ownerType: 'USER',
+    ownerId: String(updated.customerId),
+    source: 'NEW_LEAD',
+    title: 'Contractor could not take this on',
+    message: note
+      ? `${updated.contract.number} — ${note}`
+      : `The contractor was unable to confirm ${updated.contract.number}. Our team will follow up.`,
+    link: `/construction/site-visits/${requestId}`,
+    metadata: { packageRequestId: String(requestId) },
+  }).catch(() => {});
+  notifyAdmins({
+    source: 'NEW_LEAD',
+    title: 'Contractor declined a confirmed contract',
+    message: `${updated.contract.number} (${ref}) was accepted by the customer but the contractor could not confirm it${note ? `: ${note}` : '.'}`,
+    link: segmentPath(updated),
+    metadata: { packageRequestId: String(requestId), segment: updated.package?.segment || '' },
+  }).catch(() => {});
+
+  await audit('package_request.contract_declined_by_contractor', {
+    entityId: requestId,
+    after: { number: updated.contract.number, note },
+    performedBy: { userId: contractorId, role: 'CONTRACTOR', actionAt: now },
+  });
+  logger.info(`[construction] contract ${updated.contract.number} declined by contractor`);
+  return contractorDetailView(updated, contractorId);
+};

@@ -1,17 +1,26 @@
 /**
  * Phase 5 migration — projects, stages and staged payment.
  *
- * `autoIndex: false` means Mongoose builds nothing on its own. Three of these
+ * `autoIndex: false` means Mongoose builds nothing on its own. Four of these
  * are correctness guarantees on money, not optimisations:
  *
- *   construction_projects.quotationId          unique — one project per accepted
- *     quotation, so a retried acceptance cannot create a second project holding
- *     a second lot of the customer's money.
+ *   construction_projects.quotationId          unique+SPARSE — one project per
+ *     accepted quotation, so a retried acceptance cannot create a second
+ *     project holding a second lot of the customer's money. Sparse because a
+ *     package-request-sourced project (see next) leaves this null.
+ *   construction_projects.packageRequestId     unique+sparse — same guarantee,
+ *     for the package/site-visit pipeline's fixed-price contracts. NEW.
  *   construction_project_stages {projectId,sequence}  unique — stage numbering
  *     cannot collide, which is what "approved in order" relies on.
  *   construction_project_stages.releaseReference  unique partial — the
  *     idempotency key handed to the escrow ledger. Without it, a double-tapped
  *     approval could pay a contractor twice.
+ *
+ * RE-RUN THIS after upgrading from a build where `quotationId` was the only
+ * source: `syncIndexes()` rebuilds it from a plain unique index into a
+ * unique+sparse one. Skipping that step means the SECOND package-sourced
+ * project ever confirmed (quotationId: null) hits a duplicate-key error on
+ * the old, non-sparse index.
  *
  * Run:      node scripts/phase5-ensure-project-indexes.js
  * Verify:   node scripts/phase5-ensure-project-indexes.js --verify
@@ -44,6 +53,11 @@ const hasUnique = (indexes, keys) => indexes.some(
     && Object.keys(i.key).length === keys.length,
 );
 
+/** `sparse` matters here specifically: without it, a second `null` row is rejected as a duplicate. */
+const hasSparseUnique = (indexes, key) => indexes.some(
+  (i) => i.unique === true && i.sparse === true && i.key?.[key] === 1 && Object.keys(i.key).length === 1,
+);
+
 async function ensureCollection(name) {
   const existing = await mongoose.connection.db.listCollections({ name }).toArray();
   if (existing.length === 0) {
@@ -61,10 +75,18 @@ async function up() {
   }
 
   const projectIdx = await ConstructionProject.collection.indexes();
-  if (!hasUnique(projectIdx, ['quotationId'])) {
+  if (!hasSparseUnique(projectIdx, 'quotationId')) {
     throw new Error(
-      'CRITICAL: unique index on construction_projects.quotationId was not created. '
-      + 'A retried acceptance could create two projects against one quotation.',
+      'CRITICAL: unique+sparse index on construction_projects.quotationId was not created (or is '
+      + 'still the old non-sparse one — drop it manually and re-run if syncIndexes did not replace it). '
+      + 'A retried acceptance could create two projects against one quotation, and a second '
+      + 'package-sourced project would fail on a spurious duplicate-null error.',
+    );
+  }
+  if (!hasSparseUnique(projectIdx, 'packageRequestId')) {
+    throw new Error(
+      'CRITICAL: unique+sparse index on construction_projects.packageRequestId was not created. '
+      + 'A retried contract confirmation could create two projects against one package request.',
     );
   }
 
@@ -79,7 +101,7 @@ async function up() {
     );
   }
 
-  console.log('\n✓ Unique project, stage-sequence and release-reference indexes confirmed.');
+  console.log('\n✓ Unique project (both sources), stage-sequence and release-reference indexes confirmed.');
   console.log('✓ Phase 5 project schema ready.');
 }
 
@@ -102,6 +124,39 @@ async function verify() {
     ? '✓ release-reference idempotency index present.'
     : '✗ CRITICAL: release-reference index MISSING — stage payments are not idempotent.');
   if (!releaseUnique) ok = false;
+
+  const projectIdx = await ConstructionProject.collection.indexes();
+  const quotationSparseUnique = hasSparseUnique(projectIdx, 'quotationId');
+  console.log(quotationSparseUnique
+    ? '✓ quotationId unique+sparse index present.'
+    : '✗ CRITICAL: quotationId is missing its unique+sparse index (or is still the old non-sparse one).');
+  if (!quotationSparseUnique) ok = false;
+
+  const packageRequestSparseUnique = hasSparseUnique(projectIdx, 'packageRequestId');
+  console.log(packageRequestSparseUnique
+    ? '✓ packageRequestId unique+sparse index present.'
+    : '✗ CRITICAL: packageRequestId unique+sparse index is missing.');
+  if (!packageRequestSparseUnique) ok = false;
+
+  // Never more than one project per source document, whichever pipeline created it.
+  const [dupeQuotations, dupePackages] = await Promise.all([
+    ConstructionProject.aggregate([
+      { $match: { quotationId: { $ne: null } } },
+      { $group: { _id: '$quotationId', n: { $sum: 1 } } },
+      { $match: { n: { $gt: 1 } } },
+    ]),
+    ConstructionProject.aggregate([
+      { $match: { packageRequestId: { $ne: null } } },
+      { $group: { _id: '$packageRequestId', n: { $sum: 1 } } },
+      { $match: { n: { $gt: 1 } } },
+    ]),
+  ]);
+  if (dupeQuotations.length || dupePackages.length) {
+    console.log(`✗ CRITICAL: duplicate projects found — ${dupeQuotations.length} quotation(s), ${dupePackages.length} package request(s) with more than one project.`);
+    ok = false;
+  } else {
+    console.log('✓ no source document (quotation or package request) has more than one project.');
+  }
 
   const byStatus = await ConstructionProject.aggregate([
     { $match: { isDeleted: { $ne: true } } },

@@ -13,6 +13,7 @@ const yesNo = (v) => (v === true ? "Yes" : v === false ? "No" : "—");
 const STATUS = {
   sent: { label: "Awaiting your answer", tone: "bg-amber-50 text-amber-800 ring-amber-200" },
   accepted: { label: "Accepted", tone: "bg-emerald-50 text-emerald-800 ring-emerald-200" },
+  awaiting_contractor: { label: "Awaiting contractor", tone: "bg-amber-50 text-amber-800 ring-amber-200" },
   rejected: { label: "Declined", tone: "bg-slate-100 text-slate-700 ring-slate-200" },
   expired: { label: "Expired", tone: "bg-slate-100 text-slate-700 ring-slate-200" },
 };
@@ -77,7 +78,7 @@ export default function SiteQuotationDetail() {
     }
   };
 
-  const accept = () => run("accept", () => constructionApi.acceptSiteVisitContract(id), "Quotation accepted");
+  const accept = () => run("accept", () => constructionApi.acceptSiteVisitContract(id), "Accepted — waiting for the contractor to confirm");
   const decline = async () => {
     const ok = await run("decline", () => constructionApi.declineSiteVisitContract(id, declineNote.trim()), "Quotation declined");
     if (ok) {
@@ -113,7 +114,11 @@ export default function SiteQuotationDetail() {
     );
   }
 
-  const state = contract.expired ? "expired" : contract.status;
+  const state = contract.expired
+    ? "expired"
+    : contract.status === "accepted" && (!contract.contractorConfirmation || contract.contractorConfirmation.status === "pending")
+      ? "awaiting_contractor"
+      : contract.status;
   const status = STATUS[state] || STATUS.sent;
   const canAnswer = contract.status === "sent" && !contract.expired;
   const report = request.visit?.report;
@@ -242,9 +247,20 @@ export default function SiteQuotationDetail() {
           </button>
         </Block>
 
-        {contract.status === "accepted" ? (
+        {contract.status === "accepted" && (!contract.contractorConfirmation || contract.contractorConfirmation.status === "pending") ? (
           <p className="flex items-center gap-1.5 rounded-xl bg-emerald-50 px-4 py-3 text-[13px] font-bold text-emerald-800">
-            <CheckCircle2 className="h-4 w-4 shrink-0" /> You accepted this quotation on {dateTime(contract.respondedAt)}. Our team will contact you about starting the work.
+            <CheckCircle2 className="h-4 w-4 shrink-0" /> You accepted this quotation on {dateTime(contract.respondedAt)}. Waiting for the contractor to confirm before work starts.
+          </p>
+        ) : null}
+        {contract.status === "accepted" && contract.contractorConfirmation?.status === "accepted" ? (
+          <p className="flex items-center gap-1.5 rounded-xl bg-emerald-50 px-4 py-3 text-[13px] font-bold text-emerald-800">
+            <CheckCircle2 className="h-4 w-4 shrink-0" /> The contractor confirmed — your project is live under the Projects tab. Fund it to get started.
+          </p>
+        ) : null}
+        {contract.status === "accepted" && contract.contractorConfirmation?.status === "declined" ? (
+          <p className="flex items-start gap-1.5 rounded-xl bg-slate-100 px-4 py-3 text-[13px] font-bold text-slate-700">
+            <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>The contractor was unable to take this on. Our team will follow up with you.</span>
           </p>
         ) : null}
         {contract.status === "rejected" ? (

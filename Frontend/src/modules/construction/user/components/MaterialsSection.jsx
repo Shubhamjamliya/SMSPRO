@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
   ArrowRight,
-  CheckCircle2,
   Layers,
   Minus,
   Plus,
@@ -11,9 +11,8 @@ import {
 } from "lucide-react";
 import constructionApi from "../services/api";
 import { fullMoney } from "../../shared/format";
-
-const inputClass =
-  "w-full rounded-xl border border-slate-300 bg-white py-2 px-3 text-xs font-medium text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20";
+import { loadMaterialCart, saveMaterialCart } from "../materialCart";
+import { MATERIAL_CHECKOUT_PATH } from "../serviceTypes";
 
 /** Why a basket line can't be sent yet, or null if it can. */
 const qtyProblem = (material, qty) => {
@@ -34,17 +33,17 @@ const stepFor = (material) => Math.max(1, Math.floor((material.minOrderQty || 1)
  * basket, and send it to the office as a quote request. Nothing is ordered or
  * paid here — the office calls back to agree the final price and delivery.
  */
-export default function MaterialsSection({ query = "", defaultCity = "" }) {
+export default function MaterialsSection({ query = "" }) {
+  const navigate = useNavigate();
   const [materials, setMaterials] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [category, setCategory] = useState("All");
   // { [materialId]: what is typed in the quantity box }. Kept as text so "0." and "0.5" can be typed.
-  const [basket, setBasket] = useState({});
-  const [modalOpen, setModalOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [sentRef, setSentRef] = useState(null);
-  const [form, setForm] = useState({ name: "", phone: "", city: defaultCity, address: "", notes: "" });
+  // Starts from whatever was saved on the checkout page, so going back and forth does not lose it.
+  const [basket, setBasket] = useState(() =>
+    Object.fromEntries(loadMaterialCart().map(({ materialId, quantity }) => [materialId, String(quantity)])),
+  );
 
   const load = () => {
     setLoading(true);
@@ -61,10 +60,11 @@ export default function MaterialsSection({ query = "", defaultCity = "" }) {
 
   useEffect(load, []);
 
-  // A city picked from the location selector after this mounted still fills an empty field.
+  // Kept in step with the stored cart, so leaving this page and coming back (or
+  // going on to checkout and back) never loses what was added.
   useEffect(() => {
-    if (defaultCity) setForm((f) => (f.city ? f : { ...f, city: defaultCity }));
-  }, [defaultCity]);
+    saveMaterialCart(basket);
+  }, [basket]);
 
   const categories = useMemo(
     () => ["All", ...new Set(materials.map((m) => m.category).filter(Boolean))],
@@ -103,7 +103,8 @@ export default function MaterialsSection({ query = "", defaultCity = "" }) {
     else setQty(material, next);
   };
 
-  const openRequest = () => {
+  /** Hand the cart off to the checkout page — a full page, not a modal, same as choosing a package. */
+  const goToCheckout = () => {
     const problem = basketLines
       .map(({ material, qty }) => ({ material, problem: qtyProblem(material, qty) }))
       .find((line) => line.problem);
@@ -111,34 +112,8 @@ export default function MaterialsSection({ query = "", defaultCity = "" }) {
       toast.error(`${problem.material.name}: ${problem.problem}`);
       return;
     }
-    setModalOpen(true);
-  };
-
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!form.name.trim() || !form.phone.trim() || !form.city.trim()) {
-      toast.error("Please fill in your name, phone number and city.");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const request = await constructionApi.createMaterialRequest({
-        contact: { name: form.name.trim(), phone: form.phone.trim() },
-        delivery: { city: form.city.trim(), address: form.address.trim() },
-        notes: form.notes.trim(),
-        items: basketLines.map(({ material, qty }) => ({ materialId: material._id, quantity: qty })),
-      });
-      setSentRef(`#${String(request._id).slice(-6).toUpperCase()}`);
-      setBasket({});
-      setModalOpen(false);
-      setForm((f) => ({ ...f, address: "", notes: "" }));
-    } catch (error) {
-      toast.error(error?.response?.data?.message || "Could not send your request. Please try again.");
-      // The catalogue may have changed under them (item removed, out of stock) — refresh it.
-      load();
-    } finally {
-      setSubmitting(false);
-    }
+    saveMaterialCart(basket);
+    navigate(MATERIAL_CHECKOUT_PATH);
   };
 
   if (loading) {
@@ -177,26 +152,6 @@ export default function MaterialsSection({ query = "", defaultCity = "" }) {
           Add what you need and send a quote request — we'll confirm the final price and delivery.
         </p>
       </div>
-
-      {sentRef && (
-        <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-black text-emerald-900">Request {sentRef} sent</p>
-            <p className="text-xs font-medium text-emerald-800">
-              Our team will call you shortly to confirm the price and delivery.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setSentRef(null)}
-            className="rounded-full p-1 text-emerald-700 hover:bg-emerald-100"
-            aria-label="Dismiss"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
 
       {materials.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 sm:p-10 text-center shadow-xs">
@@ -383,7 +338,7 @@ export default function MaterialsSection({ query = "", defaultCity = "" }) {
         <div className="sticky bottom-24 z-30">
           <button
             type="button"
-            onClick={openRequest}
+            onClick={goToCheckout}
             className="flex w-full items-center justify-between gap-3 rounded-2xl bg-slate-900 px-4 py-3.5 text-left text-white shadow-xl shadow-slate-900/25 transition-all hover:bg-slate-800 active:scale-[0.99]"
           >
             <span className="flex items-center gap-2.5">
@@ -398,104 +353,10 @@ export default function MaterialsSection({ query = "", defaultCity = "" }) {
               </span>
             </span>
             <span className="flex items-center gap-1.5 text-xs font-black">
-              Request quote
+              Review & send
               <ArrowRight className="h-4 w-4" />
             </span>
           </button>
-        </div>
-      )}
-
-      {modalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950/70 p-3 backdrop-blur-md sm:p-4">
-          <form
-            onSubmit={submit}
-            className="relative my-auto w-full max-w-lg space-y-4 rounded-3xl border border-slate-200 bg-white p-5 text-slate-900 shadow-2xl sm:p-6"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-lg font-black">Request a quote</h3>
-                <p className="mt-0.5 text-xs font-medium text-slate-500">
-                  Nothing is charged now. We'll call to confirm the price and delivery.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setModalOpen(false)}
-                className="shrink-0 rounded-full bg-slate-100 p-2 text-slate-500 hover:bg-slate-200"
-                aria-label="Close"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="max-h-44 space-y-1.5 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              {basketLines.map(({ material, qty }) => (
-                <div key={material._id} className="flex items-start justify-between gap-3 text-xs">
-                  <span className="min-w-0 font-bold text-slate-800">
-                    {material.name}
-                    <span className="block font-medium text-slate-500">
-                      {qty} × {fullMoney(material.price)} {material.unit}
-                    </span>
-                  </span>
-                  <span className="shrink-0 font-black tabular-nums">{fullMoney(material.price * qty)}</span>
-                </div>
-              ))}
-              <div className="flex items-center justify-between border-t border-slate-200 pt-2 text-xs font-black">
-                <span>Estimated total</span>
-                <span className="tabular-nums">{fullMoney(estimatedTotal)}</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <input
-                type="text"
-                placeholder="Your full name *"
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                className={inputClass}
-                required
-              />
-              <input
-                type="tel"
-                placeholder="Mobile number *"
-                value={form.phone}
-                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                className={inputClass}
-                required
-              />
-              <input
-                type="text"
-                placeholder="Delivery city *"
-                value={form.city}
-                onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
-                className={`${inputClass} sm:col-span-2`}
-                required
-              />
-              <input
-                type="text"
-                placeholder="Delivery address / site (optional)"
-                value={form.address}
-                onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-                className={`${inputClass} sm:col-span-2`}
-              />
-            </div>
-            <textarea
-              rows={2}
-              placeholder="Anything else we should know (optional)"
-              value={form.notes}
-              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-              className={`${inputClass} resize-none`}
-            />
-
-            <button
-              type="submit"
-              disabled={submitting}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3 text-sm font-black text-white shadow-md transition-all hover:bg-blue-500 active:scale-95 disabled:opacity-60"
-            >
-              {submitting ? "Sending…" : "Send request"}
-              {!submitting && <ArrowRight className="h-4 w-4" />}
-            </button>
-          </form>
         </div>
       )}
     </section>

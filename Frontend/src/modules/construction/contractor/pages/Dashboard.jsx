@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowUpRight, BadgeCheck, Building2, CalendarClock, ChevronRight, ClipboardCheck, FileText, HardHat,
-  Inbox, KeyRound, MapPin, Navigation, ShieldCheck, Sparkles, Star, TrendingUp, Wallet, Wrench,
+  Inbox, KeyRound, MapPin, Navigation, ShieldCheck, Sparkles, Star, TrendingUp, Wallet,
 } from "lucide-react";
 import contractorApi from "../services/contractorApi";
 import ContractorShell from "../components/ContractorShell";
@@ -315,7 +315,6 @@ export default function ContractorDashboard() {
             {[
               ["Visits", Building2, "bg-orange-100 text-orange-600", "/contractor/package-requests"],
               ["Enquiries", Inbox, "bg-blue-100 text-blue-600", "/contractor/leads"],
-              ["Jobs", Wrench, "bg-slate-200 text-slate-700", "/contractor/jobs"],
               ["Schedule", CalendarClock, "bg-teal-100 text-teal-600", "/contractor/visits"],
               ["Quotes", FileText, "bg-violet-100 text-violet-600", "/contractor/quotations"],
               ["Projects", HardHat, "bg-emerald-100 text-emerald-600", "/contractor/projects"],

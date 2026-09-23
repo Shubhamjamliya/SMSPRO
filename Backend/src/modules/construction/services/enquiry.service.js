@@ -182,6 +182,10 @@ export const acceptQuotation = async (customerId, enquiryId, quotationId) => {
   quotation.status = 'accepted';
   quotation.acceptedAt = new Date();
   quotation.statusHistory.push({ status: 'accepted', at: new Date() });
+  // The price and scope are locked, but this is not yet a project — the
+  // contractor still has to confirm they can take it on (see
+  // quotation.service.js#confirmQuotationByContractor).
+  quotation.contractorConfirmation = { status: 'pending', respondedAt: null, declineReason: '' };
   await quotation.save();
 
   // Every other live quote on this enquiry is now moot — withdraw them so no
@@ -195,7 +199,8 @@ export const acceptQuotation = async (customerId, enquiryId, quotationId) => {
   touch(enquiry, 'accepted', `Accepted ${quotation.quotationNumber}`);
   await enquiry.save();
 
-  // BRD C13 — the turning point. The contractor needs to know immediately.
+  // BRD C13 — the turning point. The contractor needs to know immediately,
+  // and now needs to actively confirm before this becomes their project.
   notifyQuotationAccepted({
     contractorId: quotation.contractorId,
     quotation: {
@@ -218,28 +223,11 @@ export const acceptQuotation = async (customerId, enquiryId, quotationId) => {
     },
   });
 
-  /**
-   * BRD step 9 — "the enquiry now becomes a live project, and the agreed price
-   * and scope are locked."
-   *
-   * Awaited rather than fired-and-forgotten: the customer is sent straight to
-   * the project screen after accepting, so the project has to exist by the time
-   * this returns. Creation is idempotent on quotationId, so a retry is safe.
-   */
-  let project = null;
-  try {
-    const { createProjectFromQuotation } = await import('./project.service.js');
-    project = await createProjectFromQuotation(quotation._id);
-  } catch (error) {
-    // The acceptance itself already happened and is recorded. A failure here
-    // must not unwind it — the project can be created from the accepted
-    // quotation at any time.
-    logger.error(
-      `[construction] project creation failed for ${quotation.quotationNumber}: ${error.message}`,
-    );
-  }
-
-  return { enquiry: enquiry.toObject(), quotation: quotation.toObject(), project };
+  // The project is NOT created here. Accepting only locks the price and
+  // scope and asks the contractor to confirm — the enquiry becomes a live
+  // project only once they do (`quotation.service.js#confirmQuotationByContractor`),
+  // at which point it shows up under /contractor/projects.
+  return { enquiry: enquiry.toObject(), quotation: quotation.toObject(), project: null };
 };
 
 /** BRD C13 — rejecting asks for a reason, which improves future matching. */

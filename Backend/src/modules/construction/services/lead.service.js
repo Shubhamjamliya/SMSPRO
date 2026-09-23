@@ -175,50 +175,6 @@ export const declineLead = async (contractorId, leadId, { reason, note } = {}) =
   return lead.toObject();
 };
 
-/** The enquiries a contractor has taken on — their working list. */
-export const listAcceptedEnquiries = async (contractorId, query = {}) => {
-  const { page, limit, skip } = buildPaginationOptions(query);
-  const filter = { contractorId, status: 'accepted' };
-
-  const [leads, total] = await Promise.all([
-    ContractorLead.find(filter)
-      .populate({
-        path: 'enquiryId',
-        select: 'enquiryNumber description site budgetMin budgetMax urgency status '
-          + 'attachments createdAt serviceId customerId acceptedQuotationId',
-        populate: [
-          { path: 'serviceId', select: 'name' },
-          { path: 'customerId', select: 'name phone' },
-        ],
-      })
-      .sort({ respondedAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean(),
-    ContractorLead.countDocuments(filter),
-  ]);
-
-  const enquiryIds = leads.map((l) => l.enquiryId?._id).filter(Boolean);
-  const quotes = enquiryIds.length
-    ? await Quotation.find({
-      enquiryId: { $in: enquiryIds }, contractorId, isLatest: true, ...alive,
-    }).select('enquiryId status total quotationNumber version').lean()
-    : [];
-  const quoteByEnquiry = new Map(quotes.map((q) => [String(q.enquiryId), q]));
-
-  return buildPaginatedResult({
-    docs: leads.filter((l) => l.enquiryId).map((lead) => ({
-      leadId: String(lead._id),
-      acceptedAt: lead.respondedAt,
-      enquiry: lead.enquiryId,
-      myQuotation: quoteByEnquiry.get(String(lead.enquiryId._id)) || null,
-    })),
-    total,
-    page,
-    limit,
-  });
-};
-
 /** Counts for the contractor's home screen. */
 export const getLeadStats = async (contractorId) => {
   const [byStatus, liveProjects] = await Promise.all([

@@ -206,6 +206,26 @@ export default function PackageRequestDetail() {
     return contractorApi.getPackageRequest(id);
   }, "It's yours — the customer's details are now shown");
 
+  const confirmTheContract = async () => {
+    const result = await run(
+      "contract-confirm",
+      () => contractorApi.confirmPackageContract(id),
+      "Confirmed — your site visit fee has been refunded",
+    );
+    if (result?.project?._id) {
+      navigate(`/contractor/projects/${result.project._id}`);
+    }
+  };
+
+  const declineTheContract = async () => {
+    const note = window.prompt("Tell the customer why you can't take this on (optional). This does not refund your site visit fee.");
+    if (note === null) return;
+    await run("contract-decline", async () => {
+      await contractorApi.declinePackageContract(id, note.trim());
+      return contractorApi.getPackageRequest(id);
+    }, "Told the customer you can't take this on");
+  };
+
   const decline = async () => {
     if (!window.confirm("Pass on this request? It goes to other contractors.")) return;
     setBusy("decline");
@@ -304,10 +324,12 @@ export default function PackageRequestDetail() {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="truncate text-[16px] font-bold text-gray-900">{request.package?.name}</p>
-            <p className="mt-0.5 text-[12px] capitalize text-gray-500">{request.package?.segment} package</p>
+            <p className="mt-0.5 text-[12px] capitalize text-gray-500">
+              {request.package?.segment === "budget_service" ? "Budget Friendly service" : `${request.package?.segment} package`}
+            </p>
           </div>
           <span className="shrink-0 rounded-full bg-orange-50 px-2.5 py-1 text-[11px] font-bold text-orange-700">
-            ≈ {fullMoney(request.estimatedCost)}
+            {request.estimatedCost != null ? `≈ ${fullMoney(request.estimatedCost)}` : "Quoted after visit"}
           </span>
         </div>
         <div className="mt-3 space-y-1.5 text-[13px] text-gray-600">
@@ -321,6 +343,13 @@ export default function PackageRequestDetail() {
             {` · wants to start: ${request.startWindow}`}
           </p>
           {request.notes ? <p className="text-gray-500">“{request.notes}”</p> : null}
+          {mine && request.acceptanceFee > 0 ? (
+            <p className={request.acceptanceFeeRefunded ? "text-emerald-700" : "text-gray-500"}>
+              {request.acceptanceFeeRefunded
+                ? `${fullMoney(request.acceptanceFee)} site visit fee refunded — the customer accepted the contract.`
+                : `${fullMoney(request.acceptanceFee)} site visit fee charged to your wallet.`}
+            </p>
+          ) : null}
         </div>
 
         {mine && request.customer ? (
@@ -356,6 +385,11 @@ export default function PackageRequestDetail() {
                 The customer has paid the visiting fee. The first contractor to accept gets the visit, and their name and
                 number are shown once you do.
               </p>
+              {request.acceptanceFee > 0 ? (
+                <p className="mt-2 text-[13px] font-semibold text-amber-700">
+                  Accepting charges {fullMoney(request.acceptanceFee)} from your wallet.
+                </p>
+              ) : null}
               <div className="mt-3 flex gap-2">
                 <button
                   type="button"
@@ -570,12 +604,56 @@ export default function PackageRequestDetail() {
                 <Clock className="h-4 w-4 text-orange-500" /> Contract
               </h2>
               {request.contract ? (
-                <p className="mt-1.5 text-[13px] text-gray-600">
-                  {request.contract.number} · {fullMoney(request.contract.price)} —{" "}
-                  <span className="font-semibold text-gray-900">
-                    {{ sent: "waiting for the customer", accepted: "accepted by the customer", rejected: "declined by the customer" }[request.contract.status]}
-                  </span>
-                </p>
+                <>
+                  <p className="mt-1.5 text-[13px] text-gray-600">
+                    {request.contract.number} · {fullMoney(request.contract.price)} —{" "}
+                    <span className="font-semibold text-gray-900">
+                      {{ sent: "waiting for the customer", accepted: "accepted by the customer", rejected: "declined by the customer" }[request.contract.status]}
+                    </span>
+                  </p>
+
+                  {request.contract.status === "accepted" && request.contract.contractorConfirmation?.status === "pending" ? (
+                    <div className="mt-3 rounded-lg bg-emerald-50 p-3">
+                      <p className="text-[13px] font-semibold text-emerald-900">
+                        The customer accepted — confirm to start work
+                      </p>
+                      <p className="mt-1 text-[12px] leading-relaxed text-emerald-800">
+                        Your site visit fee is refunded the moment you confirm.
+                      </p>
+                      <div className="mt-2.5 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={confirmTheContract}
+                          disabled={Boolean(busy)}
+                          className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-[13px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          {busy === "contract-confirm" ? "…" : "Confirm"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={declineTheContract}
+                          disabled={Boolean(busy)}
+                          className="rounded-lg border border-emerald-300 px-4 py-2.5 text-[13px] font-semibold text-emerald-800 hover:bg-emerald-100"
+                        >
+                          Can't take it
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {request.contract.contractorConfirmation?.status === "accepted" ? (
+                    <p className="mt-2 text-[12px] font-semibold text-emerald-700">
+                      Confirmed{request.acceptanceFeeRefunded ? " — your site visit fee was refunded." : "."}
+                    </p>
+                  ) : null}
+
+                  {request.contract.contractorConfirmation?.status === "declined" ? (
+                    <p className="mt-2 text-[12px] text-gray-500">
+                      You told the customer you can't take this on
+                      {request.contract.contractorConfirmation?.declineNote ? `: ${request.contract.contractorConfirmation.declineNote}` : "."}
+                    </p>
+                  ) : null}
+                </>
               ) : (
                 <p className="mt-1.5 text-[13px] text-gray-600">
                   The office is reviewing your report. You will be notified when they send the customer a contract.

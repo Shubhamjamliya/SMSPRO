@@ -48,6 +48,7 @@ const notificationSchema = new mongoose.Schema(
                 'PAYMENT_RELEASED',     // money reached the contractor (W17)
                 'STAGE_DELAYED',        // a target date passed (C18)
                 'PROJECT_STATUS',       // admin put a project on hold, reassigned, closed (A6)
+                'MATERIAL_DELIVERY',    // a material request was quoted, dispatched or delivered
             ],
             default: 'ADMIN_BROADCAST',
             index: true

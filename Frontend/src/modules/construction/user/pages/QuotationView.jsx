@@ -106,6 +106,35 @@ export default function QuotationView() {
           </div>
         ) : null}
 
+        {q.status === "accepted" && (!q.contractorConfirmation || q.contractorConfirmation.status === "pending") ? (
+          <div className="flex gap-3 rounded-3xl border border-blue-200/80 bg-blue-50 p-4 text-xs font-medium text-blue-900 shadow-2xs">
+            <CheckCircle2 className="h-5 w-5 shrink-0 text-blue-600 stroke-[2.2]" />
+            <p className="leading-relaxed">
+              Price locked at {fullMoney(q.total)}. Waiting for {q.contractorId?.businessName || "the contractor"} to confirm — your project opens as soon as they do.
+            </p>
+          </div>
+        ) : null}
+
+        {q.status === "accepted" && q.contractorConfirmation?.status === "accepted" ? (
+          <div className="flex gap-3 rounded-3xl border border-emerald-300/80 bg-emerald-50 p-4 text-xs font-medium text-emerald-900 shadow-2xs">
+            <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600 stroke-[2.2]" />
+            <p className="leading-relaxed">
+              {q.contractorId?.businessName || "The contractor"} confirmed — your project has started.
+            </p>
+          </div>
+        ) : null}
+
+        {q.status === "accepted" && q.contractorConfirmation?.status === "declined" ? (
+          <div className="flex gap-3 rounded-3xl border border-red-300/80 bg-red-50 p-4 text-xs font-medium text-red-900 shadow-2xs">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-red-600 stroke-[2.2]" />
+            <p className="leading-relaxed">
+              {q.contractorId?.businessName || "The contractor"} was unable to take this on
+              {q.contractorConfirmation.declineReason ? ` — ${q.contractorConfirmation.declineReason}` : "."}
+              {" "}Please contact support or ask for a fresh quote.
+            </p>
+          </div>
+        ) : null}
+
         {/* Total Grand Hero Card */}
         <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50/80 p-4.5 shadow-2xs space-y-3.5">
           <div>
@@ -349,7 +378,7 @@ export default function QuotationView() {
             {dialog === "accept" ? (
               <>
                 <p className="text-xs font-medium leading-relaxed text-slate-600">
-                  Accepting locks the agreed project price at <strong className="text-slate-900 font-extrabold">{fullMoney(q.total)}</strong> and creates your live project workspace.
+                  Accepting locks the agreed project price at <strong className="text-slate-900 font-extrabold">{fullMoney(q.total)}</strong> and sends a request to the contractor to confirm. Your project workspace opens once they do.
                 </p>
                 {unanswered.length ? (
                   <p className="mt-3 rounded-2xl bg-amber-50 p-3 text-xs font-semibold text-amber-800 border border-amber-200">
@@ -360,7 +389,7 @@ export default function QuotationView() {
                   type="button"
                   onClick={() => act(
                     () => constructionApi.acceptQuotation(enquiryId, q._id),
-                    "Quotation accepted! Project created.",
+                    "Accepted! Waiting for the contractor to confirm.",
                   )}
                   disabled={busy}
                   className="mt-5 w-full rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 py-3.5 text-xs font-extrabold text-white shadow-md shadow-amber-500/25 hover:brightness-110 disabled:opacity-50 transition-all"

@@ -6,7 +6,11 @@ import {
   validateCreateMaterialDto,
   validateUpdateMaterialDto,
   validateMaterialRequestDto,
-  validateRequestStatusDto,
+  validateSendQuotationDto,
+  validateQuotationResponseDto,
+  validateDeliveryUpdateDto,
+  validateCancelRequestDto,
+  validateAdminNoteDto,
 } from '../validators/material.validator.js';
 import { validateObjectId, validateStatusDto } from '../validators/catalog.validator.js';
 
@@ -76,11 +80,39 @@ export const listMaterialRequestsController = wrap(async (req, res) => {
   return sendResponse(res, 200, 'Material requests', { ...result, counts });
 });
 
-export const updateMaterialRequestStatusController = wrap(async (req, res) => {
+export const updateMaterialRequestNoteController = wrap(async (req, res) => {
   const id = validateObjectId(req.params.id, 'request id');
-  const data = validateRequestStatusDto(req.body);
-  const request = await materials.updateMaterialRequestStatus(id, data, req.user);
-  return sendResponse(res, 200, 'Request updated', { request });
+  const data = validateAdminNoteDto(req.body);
+  const request = await materials.updateMaterialRequestNote(id, data, req.user);
+  return sendResponse(res, 200, 'Note saved', { request });
+});
+
+export const sendMaterialQuotationController = wrap(async (req, res) => {
+  const id = validateObjectId(req.params.id, 'request id');
+  const data = validateSendQuotationDto(req.body);
+  const request = await materials.sendMaterialQuotation(id, data, req.user);
+  return sendResponse(res, 200, 'Quotation sent to the customer', { request });
+});
+
+export const dispatchMaterialRequestController = wrap(async (req, res) => {
+  const id = validateObjectId(req.params.id, 'request id');
+  const data = validateDeliveryUpdateDto(req.body);
+  const request = await materials.dispatchMaterialRequest(id, data, req.user);
+  return sendResponse(res, 200, 'Marked as dispatched', { request });
+});
+
+export const deliverMaterialRequestController = wrap(async (req, res) => {
+  const id = validateObjectId(req.params.id, 'request id');
+  const data = validateDeliveryUpdateDto(req.body);
+  const request = await materials.deliverMaterialRequest(id, data, req.user);
+  return sendResponse(res, 200, 'Marked as delivered', { request });
+});
+
+export const cancelMaterialRequestController = wrap(async (req, res) => {
+  const id = validateObjectId(req.params.id, 'request id');
+  const data = validateCancelRequestDto(req.body);
+  const request = await materials.cancelMaterialRequest(id, data, req.user);
+  return sendResponse(res, 200, 'Request cancelled', { request });
 });
 
 // ---------- Customer ----------
@@ -93,5 +125,30 @@ export const getCustomerMaterialsController = wrap(async (req, res) => {
 export const createMaterialRequestController = wrap(async (req, res) => {
   const data = validateMaterialRequestDto(req.body);
   const request = await materials.createMaterialRequest(req.user.userId, data);
-  return sendResponse(res, 201, 'Request received. Our team will contact you shortly.', { request });
+  return sendResponse(res, 201, 'Request received. Our team will review it shortly.', { request });
+});
+
+export const listMyMaterialRequestsController = wrap(async (req, res) => {
+  const requests = await materials.listCustomerMaterialRequests(req.user.userId);
+  return sendResponse(res, 200, 'Your material requests', { requests });
+});
+
+export const getMyMaterialRequestController = wrap(async (req, res) => {
+  const id = validateObjectId(req.params.id, 'request id');
+  const request = await materials.getCustomerMaterialRequest(req.user.userId, id);
+  return sendResponse(res, 200, 'Material request', { request });
+});
+
+export const acceptMaterialQuotationController = wrap(async (req, res) => {
+  const id = validateObjectId(req.params.id, 'request id');
+  const data = validateQuotationResponseDto(req.body);
+  const request = await materials.acceptMaterialQuotation(req.user.userId, id, data);
+  return sendResponse(res, 200, 'Quotation accepted', { request });
+});
+
+export const rejectMaterialQuotationController = wrap(async (req, res) => {
+  const id = validateObjectId(req.params.id, 'request id');
+  const data = validateQuotationResponseDto(req.body);
+  const request = await materials.rejectMaterialQuotation(req.user.userId, id, data);
+  return sendResponse(res, 200, 'Quotation declined', { request });
 });

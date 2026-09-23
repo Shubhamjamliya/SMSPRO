@@ -12,6 +12,7 @@ import {
   verifyPaymentSignature,
 } from '../../food/orders/helpers/razorpay.helper.js';
 import { ConstructionPackage } from '../models/constructionPackage.model.js';
+import { ConstructionBudgetService } from '../models/constructionBudgetService.model.js';
 import { ContractorProfile } from '../models/contractorProfile.model.js';
 import { PackageRequest, PACKAGE_REQUEST_STATUSES } from '../models/packageRequest.model.js';
 import { dispatchRequest, resendToAll } from './packageDispatch.service.js';
@@ -104,39 +105,81 @@ const ensureVisitFeeOrder = async (request) => {
 };
 
 /**
- * A customer selects a package.
- *
- * Returns `{ request, razorpay }`. `razorpay` is the checkout to open when there is a
- * visiting fee to pay, and null when the visit is free — in which case the request
- * has already gone out to contractors.
+ * What a request is booked FROM: a Residential/Commercial `ConstructionPackage`
+ * (via `data.packageId`) or a Budget Friendly `ConstructionBudgetService` (via
+ * `data.serviceId`). Both are booked through the same form and the same flow —
+ * this is the one place that knows how to read either catalogue.
  */
-export const createPackageRequest = async (customerId, data) => {
+const loadBookingSource = async (data) => {
+  if (data.serviceId) {
+    const service = await ConstructionBudgetService
+      .findOne({ _id: data.serviceId, ...alive, status: 'active' })
+      .lean();
+    if (!service) {
+      throw new ValidationError('That service is no longer available. Please choose another.');
+    }
+    return {
+      sourceModel: 'ConstructionBudgetService',
+      id: service._id,
+      segment: 'budget_service',
+      name: service.name,
+      price: service.price ?? null,
+      unit: service.unit || 'per sq.ft',
+      visitingFee: service.visitingFee,
+    };
+  }
+
   const pkg = await ConstructionPackage
     .findOne({ _id: data.packageId, ...alive, status: 'active' })
     .lean();
   if (!pkg) {
     throw new ValidationError('That package is no longer available. Please choose another.');
   }
+  return {
+    sourceModel: 'ConstructionPackage',
+    id: pkg._id,
+    segment: pkg.segment,
+    name: pkg.name,
+    price: pkg.price,
+    unit: pkg.unit || 'per sq.ft',
+    visitingFee: pkg.visitingFee,
+  };
+};
 
-  const fee = Math.max(0, Math.round(Number(pkg.visitingFee) || 0));
-  if (fee > 0 && fee < MIN_FEE_RUPEES) throw new ValidationError('Invalid visiting fee for this package');
+/**
+ * A customer selects a package, or books a Budget Friendly service — the same
+ * booking, dispatch and site-visit flow either way.
+ *
+ * Returns `{ request, razorpay }`. `razorpay` is the checkout to open when there is a
+ * visiting fee to pay, and null when the visit is free — in which case the request
+ * has already gone out to contractors.
+ */
+export const createPackageRequest = async (customerId, data) => {
+  const source = await loadBookingSource(data);
+
+  const fee = Math.max(0, Math.round(Number(source.visitingFee) || 0));
+  if (fee > 0 && fee < MIN_FEE_RUPEES) throw new ValidationError('Invalid visiting fee for this booking');
   // Better to refuse now than take details from someone who then cannot pay.
   if (fee > 0 && !isRazorpayConfigured()) {
     throw new ValidationError('Online payment is not available right now. Please try again later.');
   }
 
   const totalBuiltUpArea = Math.max(MIN_BUILT_UP_AREA, data.areaPerFloor * data.floors);
-  const estimatedCost = Math.round(totalBuiltUpArea * pkg.price * 100) / 100;
+  // A budget-friendly service can have no listed rate at all — quoted after the visit.
+  const estimatedCost = source.price != null
+    ? Math.round(totalBuiltUpArea * source.price * 100) / 100
+    : null;
 
   const request = await PackageRequest.create({
     customerId,
     contact: data.contact,
     package: {
-      packageId: pkg._id,
-      segment: pkg.segment,
-      name: pkg.name,
-      price: pkg.price,
-      unit: pkg.unit || 'per sq.ft',
+      sourceModel: source.sourceModel,
+      packageId: source.id,
+      segment: source.segment,
+      name: source.name,
+      price: source.price,
+      unit: source.unit,
     },
     site: {
       city: data.city,
@@ -162,7 +205,7 @@ export const createPackageRequest = async (customerId, data) => {
 
   await audit('package_request.created', {
     entityId: request._id,
-    after: { package: pkg.name, segment: pkg.segment, estimatedCost, visitingFee: fee, city: data.city },
+    after: { package: source.name, segment: source.segment, estimatedCost, visitingFee: fee, city: data.city },
   });
 
   // A free visit goes straight to contractors.
@@ -337,7 +380,7 @@ export const listPackageRequests = async (query = {}) => {
   const { page, limit, skip } = buildPaginationOptions(query);
   const filter = {};
   if (PACKAGE_REQUEST_STATUSES.includes(query.status)) filter.status = query.status;
-  if (['residential', 'commercial'].includes(query.segment)) filter['package.segment'] = query.segment;
+  if (['residential', 'commercial', 'budget_service'].includes(query.segment)) filter['package.segment'] = query.segment;
   if (query.needsAssignment === 'true') Object.assign(filter, NEEDS_ASSIGNMENT);
   Object.assign(filter, quotationFilter(query.quotation));
 
@@ -390,7 +433,9 @@ const quotationCounts = async (scope) => {
 
 /** Counts per status, for the filter tabs. */
 export const packageRequestCounts = async (segment = '') => {
-  const scope = ['residential', 'commercial'].includes(segment) ? { 'package.segment': segment } : {};
+  const scope = ['residential', 'commercial', 'budget_service'].includes(segment)
+    ? { 'package.segment': segment }
+    : {};
   const [rows, needsAssignment] = await Promise.all([
     PackageRequest.aggregate([{ $match: scope }, { $group: { _id: '$status', total: { $sum: 1 } } }]),
     PackageRequest.countDocuments({ ...NEEDS_ASSIGNMENT, ...scope }),

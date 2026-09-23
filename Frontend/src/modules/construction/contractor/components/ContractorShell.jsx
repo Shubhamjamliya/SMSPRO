@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { CalendarClock, FileText, HardHat, Home, Inbox, Menu, Wrench } from "lucide-react";
+import { CalendarClock, FileText, HardHat, Home, Inbox, Menu } from "lucide-react";
 import { getContractorUser } from "../utils/authContractor";
 import ContractorSidebar from "./ContractorSidebar";
 import ContractorNotifications from "./ContractorNotifications";
@@ -9,7 +9,6 @@ import { CONSTRUCTION_FONT } from "../../shared/fonts";
 const TABS = [
   { to: "/contractor/dashboard", label: "Home", icon: Home },
   { to: "/contractor/leads", label: "Enquiries", icon: Inbox },
-  { to: "/contractor/jobs", label: "Jobs", icon: Wrench },
   { to: "/contractor/visits", label: "Visits", icon: CalendarClock },
   { to: "/contractor/quotations", label: "Quotes", icon: FileText },
   { to: "/contractor/projects", label: "Projects", icon: HardHat },

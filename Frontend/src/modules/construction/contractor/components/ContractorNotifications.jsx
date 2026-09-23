@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
-  Bell, BellOff, CalendarClock, CheckCheck, FileText, HardHat, Inbox, ShieldAlert, Wallet, X,
+  Bell, BellOff, CalendarClock, CheckCheck, FileText, HardHat, Inbox, ShieldAlert, Trash2, Wallet, X,
 } from "lucide-react";
 import contractorApi from "../services/contractorApi";
 import { CONSTRUCTION_FONT } from "../../shared/fonts";
@@ -35,7 +35,10 @@ const ago = (value) => {
  *
  * The count is refreshed quietly on a timer and whenever the app regains focus, because a push
  * arriving while the app is open should show up without the contractor reloading. Opening the
- * panel refreshes the list; tapping a row marks it read and goes to the screen it is about.
+ * panel refreshes the list and, since seeing everything in it counts as "read", also clears the
+ * badge right away rather than waiting for each row to be tapped. Tapping a row still marks it
+ * read individually (needed for correctness the instant it happens) and goes to the screen it is
+ * about. "Clear all" removes every row for good, not just marks them read.
  * A failed load never blocks the header — the bell simply shows no badge.
  */
 export default function ContractorNotifications() {
@@ -85,9 +88,22 @@ export default function ContractorNotifications() {
 
   const unread = inbox?.unread || 0;
 
-  const openPanel = () => {
+  const openPanel = async () => {
     setOpen(true);
-    refresh({ quiet: false });
+    setLoading(true);
+    try {
+      const fresh = await contractorApi.getNotifications();
+      setInbox(fresh);
+      // Opening the panel means seeing everything in it — clear the badge now
+      // instead of making the contractor tap through each row individually.
+      if (fresh?.unread > 0) {
+        setInbox(await contractorApi.markNotificationsRead());
+      }
+    } catch {
+      toast.error("Could not load your notifications");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const openNotification = (n) => {
@@ -109,6 +125,16 @@ export default function ContractorNotifications() {
       setInbox(await contractorApi.markNotificationsRead());
     } catch {
       toast.error("Could not mark them as read");
+      refresh();
+    }
+  };
+
+  const clearAll = async () => {
+    setInbox((cur) => cur && ({ unread: 0, notifications: [] }));
+    try {
+      setInbox(await contractorApi.clearNotifications());
+    } catch {
+      toast.error("Could not clear notifications");
       refresh();
     }
   };
@@ -158,6 +184,15 @@ export default function ContractorNotifications() {
                     className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold text-orange-600 hover:bg-orange-50"
                   >
                     <CheckCheck className="h-4 w-4" /> Mark all read
+                  </button>
+                ) : null}
+                {inbox?.notifications?.length ? (
+                  <button
+                    type="button"
+                    onClick={clearAll}
+                    className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold text-red-500 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-4 w-4" /> Clear all
                   </button>
                 ) : null}
                 <button

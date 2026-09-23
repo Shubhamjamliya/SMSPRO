@@ -74,6 +74,16 @@ const constructionApi = {
   createMaterialRequest: async (body) =>
     unwrap(await axiosInstance.post('/construction/material-requests', body))?.request,
 
+  // ---------- Following a material request ----------
+  listMyMaterialRequests: async () =>
+    unwrap(await axiosInstance.get('/construction/material-requests'))?.requests || [],
+  getMyMaterialRequest: async (id) =>
+    unwrap(await axiosInstance.get(`/construction/material-requests/${id}`))?.request,
+  acceptMaterialQuotation: async (id, note = '') =>
+    unwrap(await axiosInstance.post(`/construction/material-requests/${id}/quotation/accept`, { note }))?.request,
+  rejectMaterialQuotation: async (id, note = '') =>
+    unwrap(await axiosInstance.post(`/construction/material-requests/${id}/quotation/reject`, { note }))?.request,
+
   /** Admin-managed Residential / Commercial packages. Active ones only. */
   getPackages: async (segment) => {
     const response = await axiosInstance.get('/construction/packages', {

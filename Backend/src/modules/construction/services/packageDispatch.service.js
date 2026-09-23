@@ -4,6 +4,7 @@ import { recordAudit } from '../../../core/audit/audit.service.js';
 import { buildPaginationOptions, buildPaginatedResult } from '../../../utils/helpers.js';
 import { logger } from '../../../utils/logger.js';
 import { extractPerformer } from '../../../core/utils/performer.js';
+import { debitWallet, creditWallet } from '../../../core/payments/wallet.service.js';
 import { ContractorProfile } from '../models/contractorProfile.model.js';
 import { PackageRequest } from '../models/packageRequest.model.js';
 import { getSettings } from './settings.service.js';
@@ -26,9 +27,11 @@ import { notify, notifyAdmins, contractorName } from './notify.service.js';
  */
 const alive = { isDeleted: { $ne: true } };
 
-const adminLink = (request) => `/admin/construction/end-to-end/${
-  request?.package?.segment === 'commercial' ? 'commercial' : 'residential'
-}/requests`;
+const adminLink = (request) => {
+  const segment = request?.package?.segment;
+  if (segment === 'budget_service') return '/admin/construction/budget-friendly/requests';
+  return `/admin/construction/end-to-end/${segment === 'commercial' ? 'commercial' : 'residential'}/requests`;
+};
 
 /** Commercial visits are never broadcast: the office chooses the contractor. */
 export const isCommercial = (request) => request?.package?.segment === 'commercial';
@@ -53,6 +56,14 @@ const audit = (action, extra) => recordAudit({
   ...extra,
   action,
 });
+
+/** `{ enabled, amount }` for `settings.money.siteVisitAcceptanceFee*` — `amount` is 0 when disabled. */
+export const getAcceptanceFeeConfig = async () => {
+  const settings = await getSettings();
+  const money = settings.money || {};
+  const enabled = money.siteVisitAcceptanceFeeEnabled === true;
+  return { enabled, amount: enabled ? (Number(money.siteVisitAcceptanceFee) || 0) : 0 };
+};
 
 // ---------- Matching ----------
 
@@ -463,6 +474,7 @@ const notifyOffersTaken = (request, offers) => {
 export const acceptOffer = async (contractorIdRaw, requestId) => {
   const contractorId = oid(contractorIdRaw);
   const now = new Date();
+  const { amount: feeAmount } = await getAcceptanceFeeConfig();
   const won = await PackageRequest.findOneAndUpdate(
     {
       _id: requestId,
@@ -510,9 +522,52 @@ export const acceptOffer = async (contractorIdRaw, requestId) => {
   );
   notifyOffersTaken(won, losers);
 
+  // The minimum fee for taking a site visit — charged the moment the slot is
+  // genuinely won, never before (a contractor who loses the race is never
+  // charged). A contractor short on balance is not blocked: the wallet is
+  // allowed to go negative here and nets out automatically the next time
+  // they are paid out, so this can never brick a brand-new contractor who
+  // has not earned anything yet.
+  if (feeAmount > 0) {
+    try {
+      const { transaction } = await debitWallet({
+        entityType: 'contractor',
+        entityId: String(contractorId),
+        amount: feeAmount,
+        description: `Site visit acceptance fee — ${shortRef(requestId)}`,
+        category: 'site_visit_acceptance_fee',
+        module: 'construction',
+        metadata: { packageRequestId: String(requestId) },
+        allowNegative: true,
+      });
+      won.acceptanceFee = { amount: feeAmount, chargedAt: now, transactionId: transaction._id };
+      await PackageRequest.updateOne({ _id: requestId }, { $set: { acceptanceFee: won.acceptanceFee } });
+
+      // Best effort — the fee is already collected from the contractor either way.
+      creditWallet({
+        entityType: 'admin',
+        entityId: 'platform',
+        amount: feeAmount,
+        description: `Site visit acceptance fee from contractor ${contractorId}`,
+        category: 'site_visit_acceptance_fee',
+        module: 'construction',
+        metadata: { packageRequestId: String(requestId), contractorId: String(contractorId) },
+      }).catch((err) => {
+        logger.error(`[construction] admin credit for site visit fee failed (${requestId}): ${err.message}`);
+      });
+    } catch (err) {
+      // Should be unreachable with allowNegative — this only fires for a real
+      // infra failure. The assignment stands regardless: the customer is
+      // already relying on this contractor, and an uncollected fee is far
+      // less costly than an unassigned site visit.
+      logger.error(`[construction] site visit acceptance fee failed for ${requestId}: ${err.message}`);
+      alertOffice(won, 'Site visit fee not collected', `${err.message} — request ${shortRef(requestId)}.`);
+    }
+  }
+
   await audit('package_request.accepted', {
     entityId: requestId,
-    after: { contractorId: String(contractorId) },
+    after: { contractorId: String(contractorId), acceptanceFee: feeAmount || 0 },
     performedBy: { userId: contractorId, role: 'CONTRACTOR', actionAt: now },
   });
 
@@ -810,8 +865,14 @@ export const assignContractor = async (requestId, contractorIdRaw, reqUser = nul
 
 // ---------- What a contractor sees ----------
 
-/** A request as the CONTRACTOR sees it. The customer's contact details only appear once they have accepted. */
-const toContractorView = (request, contractorId, now = new Date()) => {
+/**
+ * A request as the CONTRACTOR sees it. The customer's contact details only appear once they have accepted.
+ *
+ * `prospectiveFee` is the current `settings.money.siteVisitAcceptanceFee` — what accepting would cost
+ * right now — shown only while the offer is still open. Once assigned, the fee actually charged (if
+ * any) is read back off the request itself, since settings may have changed since.
+ */
+const toContractorView = (request, contractorId, now = new Date(), prospectiveFee = 0) => {
   const mine = (request.offers || []).find((o) => String(o.contractorId) === String(contractorId));
   const assignedToMe = String(request.assignedContractorId || '') === String(contractorId);
   const takenByOther = Boolean(request.assignedContractorId) && !assignedToMe;
@@ -840,6 +901,10 @@ const toContractorView = (request, contractorId, now = new Date()) => {
     canRespond: open,
     takenByOther,
     assignedToMe,
+    // What accepting costs from the wallet (open offer) or already cost (assigned) — 0/null otherwise.
+    acceptanceFee: assignedToMe ? (request.acceptanceFee?.amount || 0) : (open ? prospectiveFee : null),
+    // Refunded once the customer accepts this request's contract — see `packageVisit.service.js#respond`.
+    acceptanceFeeRefunded: assignedToMe ? Boolean(request.acceptanceFee?.refundedAt) : false,
     // Where the site visit has got to, so the list can show "On the way" / "Report sent".
     visitStage: assignedToMe ? (request.visit?.stage || 'assigned') : null,
     contractStatus: assignedToMe ? (request.contract?.status || 'none') : null,
@@ -862,13 +927,14 @@ export const listContractorPackageRequests = async (contractorId, query = {}) =>
   const { page, limit, skip } = buildPaginationOptions(query);
   const filter = { 'offers.contractorId': contractorId };
 
-  const [docs, total] = await Promise.all([
+  const [docs, total, { amount: prospectiveFee }] = await Promise.all([
     PackageRequest.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
     PackageRequest.countDocuments(filter),
+    getAcceptanceFeeConfig(),
   ]);
   const now = new Date();
   return buildPaginatedResult({
-    docs: docs.map((doc) => toContractorView(doc, contractorId, now)),
+    docs: docs.map((doc) => toContractorView(doc, contractorId, now, prospectiveFee)),
     total,
     page,
     limit,

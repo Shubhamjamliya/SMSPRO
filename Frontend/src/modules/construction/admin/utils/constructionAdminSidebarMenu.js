@@ -15,6 +15,20 @@ export const constructionAdminSidebarMenu = [
   },
   {
     type: "section",
+    title: "Pipeline",
+    permissionKey: "enquiries",
+    items: [
+      {
+        type: "link",
+        label: "Enquiries",
+        icon: "Inbox",
+        path: "/admin/construction/enquiries",
+        permissionKey: "list",
+      },
+    ],
+  },
+  {
+    type: "section",
     title: "End to End Services",
     permissionKey: "settings",
     items: [
@@ -82,7 +96,14 @@ export const constructionAdminSidebarMenu = [
         type: "link",
         label: "Requests",
         icon: "ClipboardList",
-        path: "/admin/construction/budget-requests",
+        path: "/admin/construction/budget-friendly/requests",
+        permissionKey: "list",
+      },
+      {
+        type: "link",
+        label: "Quotations",
+        icon: "FileSignature",
+        path: "/admin/construction/budget-friendly/quotations",
         permissionKey: "list",
       },
     ],
@@ -104,20 +125,6 @@ export const constructionAdminSidebarMenu = [
         label: "Requests",
         icon: "ClipboardList",
         path: "/admin/construction/material-requests",
-        permissionKey: "list",
-      },
-    ],
-  },
-  {
-    type: "section",
-    title: "Pipeline",
-    permissionKey: "enquiries",
-    items: [
-      {
-        type: "link",
-        label: "Enquiries",
-        icon: "Inbox",
-        path: "/admin/construction/enquiries",
         permissionKey: "list",
       },
     ],

@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { AlertTriangle, ClipboardList, Eye, MapPin, Phone, RotateCcw, UserCheck } from "lucide-react";
 import { PageHeader, AdminTable, StatusBadge } from "@/shared/components/admin";
@@ -61,7 +60,12 @@ const statusMeta = (value) => STATUSES.find((s) => s.value === value) || STATUSE
 /** A short reference the office can read out over the phone. */
 const shortRef = (row) => `#${String(row._id).slice(-6).toUpperCase()}`;
 
-const segmentLabel = (segment) => (segment === "commercial" ? "Commercial" : "Residential");
+const SEGMENT_LABEL = {
+  commercial: "Commercial",
+  budget_service: "Budget Friendly",
+  residential: "Residential",
+};
+const segmentLabel = (segment) => SEGMENT_LABEL[segment] || "Residential";
 
 /** Whether the visiting fee is settled, in words the office can act on. */
 const paymentChip = (row) => {
@@ -109,14 +113,23 @@ const contractorCell = (row) => {
   return <span className="text-xs text-gray-400">—</span>;
 };
 
-const REQUEST_PAGES = [
-  { segment: "residential", label: "Residential Requests", path: "/admin/construction/end-to-end/residential/requests" },
-  { segment: "commercial", label: "Commercial Requests", path: "/admin/construction/end-to-end/commercial/requests" },
-];
+const REQUEST_PAGE_TITLE = {
+  commercial: "Commercial Requests",
+  budget_service: "Budget Friendly Requests",
+  residential: "Residential Requests",
+};
 
-/** One page per segment (see the routes): residential and commercial requests never share a list. */
+const REQUEST_PAGE_DESCRIPTION = {
+  commercial:
+    "Commercial site visits are not sent to contractors automatically. Once the visiting fee is paid, each request waits here for you to assign a contractor. The estimate is at the package rate; agree the real price with the customer.",
+  budget_service:
+    "Budget Friendly site visits go straight to nearby contractors once the visiting fee is paid, and the first to accept gets the visit. If nobody accepts, assign one yourself. The estimate is at the service's listed rate; agree the real price with the customer.",
+  residential:
+    "Residential site visits go straight to nearby contractors once the visiting fee is paid, and the first to accept gets the visit. If nobody accepts, assign one yourself. The estimate is at the package rate; agree the real price with the customer.",
+};
+
+/** One page per segment (see the routes): residential, commercial and budget-friendly requests each have their own list. */
 export default function PackageRequests({ segment = "residential" }) {
-  const navigate = useNavigate();
   const [rows, setRows] = useState([]);
   const [meta, setMeta] = useState({ total: 0, page: 1, totalPages: 1 });
   const [counts, setCounts] = useState({});
@@ -393,27 +406,9 @@ export default function PackageRequests({ segment = "residential" }) {
   return (
     <div className={CN_ADMIN_PAGE_CLASS}>
       <PageHeader
-        eyebrow="Construction · End to End"
-        title={segment === "commercial" ? "Commercial Requests" : "Residential Requests"}
-        description={
-          segment === "commercial"
-            ? "Commercial site visits are not sent to contractors automatically. Once the visiting fee is paid, each request waits here for you to assign a contractor. The estimate is at the package rate; agree the real price with the customer."
-            : "Residential site visits go straight to nearby contractors once the visiting fee is paid, and the first to accept gets the visit. If nobody accepts, assign one yourself. The estimate is at the package rate; agree the real price with the customer."
-        }
-        actions={
-          <div className="flex gap-2">
-            {REQUEST_PAGES.map((p) => (
-              <button
-                key={p.segment}
-                type="button"
-                onClick={() => navigate(p.path)}
-                className={tabClass(p.segment === segment)}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-        }
+        eyebrow={segment === "budget_service" ? "Construction · Budget Friendly" : "Construction · End to End"}
+        title={REQUEST_PAGE_TITLE[segment] || REQUEST_PAGE_TITLE.residential}
+        description={REQUEST_PAGE_DESCRIPTION[segment] || REQUEST_PAGE_DESCRIPTION.residential}
       />
 
       <div className="flex gap-2 overflow-x-auto pb-1">

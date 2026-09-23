@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Eye, FileSignature, MapPin, Phone } from "lucide-react";
 import { PageHeader, AdminTable, StatusBadge } from "@/shared/components/admin";
@@ -46,14 +45,20 @@ const stateOf = (row) => {
 
 const shortRef = (row) => `#${String(row._id).slice(-6).toUpperCase()}`;
 
-const PAGES = [
-  { segment: "residential", label: "Residential Quotations", path: "/admin/construction/end-to-end/residential/quotations" },
-  { segment: "commercial", label: "Commercial Quotations", path: "/admin/construction/end-to-end/commercial/quotations" },
-];
+const QUOTATION_TITLE = {
+  commercial: "Commercial Quotations",
+  budget_service: "Budget Friendly Quotations",
+  residential: "Residential Quotations",
+};
 
-/** Quotations for one segment (see the routes): residential and commercial never share a list. */
+const QUOTATION_SITE_VISIT_LABEL = {
+  commercial: "commercial",
+  budget_service: "Budget Friendly",
+  residential: "residential",
+};
+
+/** Quotations for one segment (see the routes): residential, commercial and budget-friendly each have their own list. */
 export default function PackageQuotations({ segment = "residential" }) {
-  const navigate = useNavigate();
   const [rows, setRows] = useState([]);
   const [meta, setMeta] = useState({ total: 0, page: 1, totalPages: 1 });
   const [counts, setCounts] = useState({});
@@ -191,28 +196,14 @@ export default function PackageQuotations({ segment = "residential" }) {
     </div>
   );
 
-  const title = segment === "commercial" ? "Commercial Quotations" : "Residential Quotations";
+  const title = QUOTATION_TITLE[segment] || QUOTATION_TITLE.residential;
 
   return (
     <div className={CN_ADMIN_PAGE_CLASS}>
       <PageHeader
-        eyebrow="Construction · End to End"
+        eyebrow={segment === "budget_service" ? "Construction · Budget Friendly" : "Construction · End to End"}
         title={title}
-        description={`Quotations for ${segment} site visits. Once a contractor sends the site visit report, write the price and terms here and send them to the customer to accept.`}
-        actions={
-          <div className="flex gap-2">
-            {PAGES.map((p) => (
-              <button
-                key={p.segment}
-                type="button"
-                onClick={() => navigate(p.path)}
-                className={tabClass(p.segment === segment)}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-        }
+        description={`Quotations for ${QUOTATION_SITE_VISIT_LABEL[segment] || segment} site visits. Once a contractor sends the site visit report, write the price and terms here and send them to the customer to accept.`}
       />
 
       <div className="flex gap-2 overflow-x-auto pb-1">

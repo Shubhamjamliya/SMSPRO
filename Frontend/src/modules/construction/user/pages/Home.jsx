@@ -26,7 +26,7 @@ import constructionApi from "../services/api";
 import { ConstructionPageShell } from "../components/ui";
 import MaterialsSection from "../components/MaterialsSection";
 import BannerCarousel from "../components/BannerCarousel";
-import { CONSTRUCTION_HOME_PATH, pathForServiceType, selectPackagePath } from "../serviceTypes";
+import { CONSTRUCTION_HOME_PATH, pathForServiceType, selectPackagePath, selectServicePath } from "../serviceTypes";
 import { fullMoney, PROJECT_STATUS_LABEL } from "../../shared/format";
 import { toDisplayPackage } from "../../shared/packageTheme";
 import useModuleBackHandler from "@/modules/common/hooks/useModuleBackHandler";
@@ -50,12 +50,12 @@ function PackagesEmpty({ loading, label }) {
 
 /**
  * The Budget Friendly section. These come from their own admin-managed list, not
- * the general catalogue. A card is only actionable when admin has linked it to a
- * live catalogue service (`enquiryServiceKey`) — that service's page is where the
- * enquiry form lives. Otherwise it is shown for information and says nothing about
- * enquiring, rather than offering a button that leads nowhere.
+ * the general catalogue. Tapping "Book a site visit" runs the SAME booking flow as
+ * a Residential/Commercial package (`BudgetServiceBooking.jsx`): fill in the site
+ * details, pay the visiting fee if there is one, and the request goes straight to
+ * contractors near the site.
  */
-function BudgetFriendlyServices({ services, loading, searching, onEnquire, onConsult }) {
+function BudgetFriendlyServices({ services, loading, searching, onBook, onConsult }) {
   if (loading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -105,7 +105,6 @@ function BudgetFriendlyServices({ services, loading, searching, onEnquire, onCon
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {services.map((service) => {
           const features = (service.features || []).slice(0, 4);
-          const canEnquire = Boolean(service.enquiryServiceKey);
           return (
             <div
               key={service._id}
@@ -168,16 +167,14 @@ function BudgetFriendlyServices({ services, loading, searching, onEnquire, onCon
                     ) : null}
                   </div>
 
-                  {canEnquire ? (
-                    <button
-                      type="button"
-                      onClick={() => onEnquire(service)}
-                      className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2.5 text-xs font-extrabold text-white shadow-sm transition-all hover:bg-emerald-500 active:scale-95"
-                    >
-                      View details &amp; enquire
-                      <ArrowRight className="h-4 w-4" />
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => onBook(service)}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2.5 text-xs font-extrabold text-white shadow-sm transition-all hover:bg-emerald-500 active:scale-95"
+                  >
+                    Book a site visit
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
                 </div>
               </div>
             </div>
@@ -500,13 +497,13 @@ export default function ConstructionHome({ serviceType = null }) {
               services={budgetServices}
               loading={budgetLoading}
               searching={Boolean(query.trim())}
-              onEnquire={(service) => navigate(`/construction/services/${service.enquiryServiceKey}?budget=${service._id}`)}
+              onBook={(service) => navigate(selectServicePath(service._id))}
               onConsult={() => navigate("/construction/enquiries")}
             />
           )}
 
           {selectedServiceType === "material-services" && (
-            <MaterialsSection query={query} defaultCity={location?.city || ""} />
+            <MaterialsSection query={query} />
           )}
 
           {selectedServiceType === "end-to-end" && (

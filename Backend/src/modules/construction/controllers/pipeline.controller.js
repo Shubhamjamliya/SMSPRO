@@ -157,11 +157,6 @@ export const declineLeadController = wrap(async (req, res) => {
   return sendResponse(res, 200, 'Enquiry declined', { lead });
 });
 
-export const listMyJobsController = wrap(async (req, res) => {
-  const result = await leadService.listAcceptedEnquiries(req.contractorId, req.query);
-  return sendResponse(res, 200, 'Your jobs', result);
-});
-
 export const contractorProposeVisitController = wrap(async (req, res) => {
   const data = validateProposeVisitDto(req.body);
   const visit = await visitService.proposeVisit({
@@ -249,6 +244,20 @@ export const getContractorQuotationController = wrap(async (req, res) => {
   const id = validateObjectId(req.params.id, 'quotation id');
   const result = await quoteService.getQuotation(id, { contractorId: req.contractorId });
   return sendResponse(res, 200, 'Quotation', result);
+});
+
+/** The customer accepted — the contractor confirms and the project is created. */
+export const confirmQuotationController = wrap(async (req, res) => {
+  const id = validateObjectId(req.params.id, 'quotation id');
+  const result = await quoteService.confirmQuotationByContractor(req.contractorId, id);
+  return sendResponse(res, 200, 'Project started', result);
+});
+
+export const declineQuotationController = wrap(async (req, res) => {
+  const id = validateObjectId(req.params.id, 'quotation id');
+  const reason = validateReasonDto(req.body, { required: false });
+  const quotation = await quoteService.declineQuotationByContractor(req.contractorId, id, reason);
+  return sendResponse(res, 200, 'Quotation declined', { quotation });
 });
 
 // ---------- Templates (BRD W13) ----------

@@ -54,6 +54,8 @@ const contractorApi = {
   /** Mark one read with an id, or all of them with none. Answers with the fresh inbox. */
   markNotificationsRead: async (id) =>
     unwrap(await axiosInstance.post(`${BASE}/notifications/read`, id ? { id } : {})),
+  /** Clears the whole inbox for good (not just marks it read). Answers with the now-empty inbox. */
+  clearNotifications: async () => unwrap(await axiosInstance.delete(`${BASE}/notifications`)),
 
   /** Every package site visit assigned to this contractor, in progress or done, with the full record. */
   listPackageVisits: async () => unwrap(await axiosInstance.get(`${BASE}/package-visits`))?.visits || [],
@@ -69,11 +71,11 @@ const contractorApi = {
   /** Save the site visit report as a draft, or send it to the office with `submit: true`. */
   saveVisitReport: async (id, report, submit = false) =>
     unwrap(await axiosInstance.put(`${BASE}/package-requests/${id}/report`, { report, submit }))?.request,
-
-  listJobs: async (params = {}) => {
-    const data = unwrap(await axiosInstance.get(`${BASE}/jobs`, { params }));
-    return { rows: data?.data || [], meta: data?.meta || { total: 0, page: 1, totalPages: 1 } };
-  },
+  /** The customer accepted the contract — confirm to start work. Refunds the site visit fee. */
+  confirmPackageContract: async (id) =>
+    unwrap(await axiosInstance.post(`${BASE}/package-requests/${id}/contract/confirm`))?.request,
+  declinePackageContract: async (id, note = '') =>
+    unwrap(await axiosInstance.post(`${BASE}/package-requests/${id}/contract/decline`, { note }))?.request,
 
   // ---------- Site visits (BRD W8, W9) ----------
   listVisits: async (params = {}) =>
@@ -99,6 +101,10 @@ const contractorApi = {
     unwrap(await axiosInstance.post(`${BASE}/quotations/${id}/queries/${queryId}/answer`, { reason: answer }))?.quotation,
   saveAsTemplate: async (id, name) =>
     unwrap(await axiosInstance.post(`${BASE}/quotations/${id}/save-as-template`, { name }))?.template,
+  /** The customer accepted — confirm to start the project. Returns `{ quotation, project }`. */
+  confirmQuotation: async (id) => unwrap(await axiosInstance.post(`${BASE}/quotations/${id}/confirm`)),
+  declineQuotation: async (id, reason) =>
+    unwrap(await axiosInstance.post(`${BASE}/quotations/${id}/decline`, { reason }))?.quotation,
 
   // ---------- Projects and stages (BRD W14–W17) ----------
   listProjects: async (params = {}) => {

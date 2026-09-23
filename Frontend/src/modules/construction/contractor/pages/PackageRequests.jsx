@@ -240,6 +240,19 @@ export default function PackageRequests() {
                   </p>
                 ) : null}
 
+                {request.canRespond && request.acceptanceFee > 0 ? (
+                  <p className="mt-1 text-[12px] text-amber-700">
+                    Accepting charges {fullMoney(request.acceptanceFee)} from your wallet.
+                  </p>
+                ) : null}
+                {request.assignedToMe && request.acceptanceFee > 0 ? (
+                  <p className={`mt-1 text-[12px] ${request.acceptanceFeeRefunded ? "text-emerald-700" : "text-gray-500"}`}>
+                    {request.acceptanceFeeRefunded
+                      ? `${fullMoney(request.acceptanceFee)} site visit fee refunded — the customer accepted the contract.`
+                      : `${fullMoney(request.acceptanceFee)} site visit fee charged to your wallet.`}
+                  </p>
+                ) : null}
+
                 {request.notes ? (
                   <p className="mt-2 line-clamp-3 text-[13px] leading-relaxed text-gray-600">{request.notes}</p>
                 ) : null}

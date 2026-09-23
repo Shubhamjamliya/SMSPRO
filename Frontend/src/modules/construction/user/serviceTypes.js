@@ -27,3 +27,20 @@ export const SELECT_PACKAGE_PATH = `${END_TO_END_PATH}/select-package`;
 
 export const selectPackagePath = (packageId) =>
   packageId ? `${SELECT_PACKAGE_PATH}/${packageId}` : SELECT_PACKAGE_PATH;
+
+/**
+ * The Book Budget Friendly Service page. Booked through the same site-visit flow
+ * as a package, just sourced from a `ConstructionBudgetService` instead — see
+ * `BudgetServiceBooking.jsx`. `:serviceId` is required: unlike a package there is
+ * no "most popular" default to fall back to.
+ */
+export const SELECT_SERVICE_PATH = "/construction/budget-friendly/book";
+
+export const selectServicePath = (serviceId) => `${SELECT_SERVICE_PATH}/${serviceId}`;
+
+/**
+ * The material request checkout page — a full page, the same shape as
+ * `RequirementBuilder`, not a modal. The basket built on the Materials page is
+ * handed off to it via `materialCart.js`.
+ */
+export const MATERIAL_CHECKOUT_PATH = "/construction/materials/checkout";

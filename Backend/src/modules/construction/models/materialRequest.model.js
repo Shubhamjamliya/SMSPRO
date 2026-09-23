@@ -2,11 +2,22 @@ import mongoose from 'mongoose';
 import { actionPerformerSchema } from '../../../core/models/actionPerformer.schema.js';
 
 /**
- * MaterialRequest — a customer asking for a quote on a basket of materials.
+ * MaterialRequest — a customer buying materials (cement, sand, steel…) straight
+ * from the office, not through a contractor.
  *
- * Not an order and not a payment: nothing is charged and no stock is held. The
- * office gets the list, contacts the customer, agrees the final price and
- * delivery, and moves the request along its status.
+ * The life of one request:
+ *
+ *   1. The customer picks materials and quantities and sends the request with a
+ *      delivery address. Nothing is charged yet — this is a basket, not an order.
+ *   2. The office reviews it and sends a quotation: the item total (fixed, from
+ *      what the customer was shown) plus transport and any other charges, and a
+ *      grand total. The request is `quoted`.
+ *   3. The customer accepts or rejects the quotation. Accepting moves the request
+ *      to `accepted`; the office can now arrange delivery. Rejecting is not a
+ *      dead end — the office can send a revised quotation, which puts it back
+ *      in `quoted`.
+ *   4. Once dispatched and delivered the office marks each step; `delivered` is
+ *      the end of the road, `cancelled` can happen from anywhere before that.
  *
  * Every line SNAPSHOTS the material's name, brand, unit and price as they were
  * when the request was made. Materials are edited and deleted freely, and a
@@ -15,11 +26,15 @@ import { actionPerformerSchema } from '../../../core/models/actionPerformer.sche
  */
 export const MATERIAL_REQUEST_STATUSES = [
   'new',
-  'contacted',
   'quoted',
-  'fulfilled',
+  'accepted',
+  'rejected',
+  'dispatched',
+  'delivered',
   'cancelled',
 ];
+
+export const MATERIAL_QUOTATION_STATUSES = ['none', 'sent', 'accepted', 'rejected'];
 
 const lineSchema = new mongoose.Schema(
   {
@@ -31,6 +46,31 @@ const lineSchema = new mongoose.Schema(
     price: { type: Number, required: true, min: 0 },
     quantity: { type: Number, required: true, min: 0 },
     lineTotal: { type: Number, required: true, min: 0 },
+  },
+  { _id: false },
+);
+
+/**
+ * The office's offer once the request has been reviewed: the fixed item total
+ * plus transport and any other charges, and what the customer answered.
+ * Mirrors `PackageRequest.contract` (`packageRequest.model.js`) — same shape of
+ * problem, same pattern: a price the office proposes and the customer accepts
+ * or rejects, snapshotted rather than recomputed after the fact.
+ */
+const quotationSchema = new mongoose.Schema(
+  {
+    status: { type: String, enum: MATERIAL_QUOTATION_STATUSES, default: 'none' },
+    /** Snapshot of `estimatedTotal` at the moment the quotation was sent. */
+    itemsTotal: { type: Number, default: 0, min: 0 },
+    transportCharge: { type: Number, default: 0, min: 0 },
+    otherCharges: { type: Number, default: 0, min: 0 },
+    otherChargesNote: { type: String, default: '', trim: true, maxlength: 200 },
+    grandTotal: { type: Number, default: 0, min: 0 },
+    notes: { type: String, default: '', trim: true, maxlength: 1000 },
+    validUntil: { type: Date, default: null },
+    sentAt: { type: Date, default: null },
+    respondedAt: { type: Date, default: null },
+    responseNote: { type: String, default: '', trim: true, maxlength: 500 },
   },
   { _id: false },
 );
@@ -50,6 +90,14 @@ const materialRequestSchema = new mongoose.Schema(
     delivery: {
       city: { type: String, required: true, trim: true, maxlength: 120 },
       address: { type: String, default: '', trim: true, maxlength: 400 },
+      landmark: { type: String, default: '', trim: true, maxlength: 200 },
+      state: { type: String, default: '', trim: true, maxlength: 80 },
+      pincode: { type: String, default: '', trim: true, maxlength: 12 },
+      /** Set once the office marks the delivery under way / complete. */
+      dispatchedAt: { type: Date, default: null },
+      deliveredAt: { type: Date, default: null },
+      /** Vehicle, driver contact, tracking link… whatever helps the customer, office-entered. */
+      trackingNote: { type: String, default: '', trim: true, maxlength: 300 },
     },
     notes: { type: String, default: '', trim: true, maxlength: 1000 },
 
@@ -63,6 +111,8 @@ const materialRequestSchema = new mongoose.Schema(
       default: 'new',
       index: true,
     },
+    quotation: { type: quotationSchema, default: () => ({}) },
+
     /** Internal only — never returned to the customer. */
     adminNote: { type: String, default: '', trim: true, maxlength: 1000 },
     updatedBy: { type: actionPerformerSchema, default: null },

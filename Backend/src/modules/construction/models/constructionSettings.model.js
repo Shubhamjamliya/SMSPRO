@@ -147,6 +147,16 @@ const constructionSettingsSchema = new mongoose.Schema(
       siteVisitFee: { type: Number, default: 0, min: 0 },
       refundSiteVisitIfQuoteRejected: { type: Boolean, default: true },
 
+      /**
+       * A separate, CONTRACTOR-side fee — the minimum amount taken from their
+       * wallet the moment they accept a site visit request (package flow).
+       * Distinct from `siteVisitFee` above, which the customer pays. A
+       * contractor with too little balance is not blocked: the wallet goes
+       * negative and it nets out automatically against their next payout.
+       */
+      siteVisitAcceptanceFeeEnabled: { type: Boolean, default: false },
+      siteVisitAcceptanceFee: { type: Number, default: 0, min: 0 },
+
       /** Q14 — without this the agreed price cannot legitimately change, so both
        *  sides settle scope changes off-platform and the project record stops
        *  being true. Not optional in construction. */
@@ -210,6 +220,9 @@ constructionSettingsSchema.pre('validate', function checkCoherence(next) {
   const m = this.money || {};
   if (m.siteVisitCharged && !(Number(m.siteVisitFee) > 0)) {
     return next(new Error('Set a site visit fee greater than 0, or switch the charge off'));
+  }
+  if (m.siteVisitAcceptanceFeeEnabled && !(Number(m.siteVisitAcceptanceFee) > 0)) {
+    return next(new Error('Set a site visit acceptance fee greater than 0, or switch the charge off'));
   }
   next();
 });

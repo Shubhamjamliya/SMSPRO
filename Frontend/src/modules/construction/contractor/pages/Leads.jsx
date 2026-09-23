@@ -135,13 +135,6 @@ export default function Leads() {
           <p className="mt-1.5 max-w-xs text-sm leading-relaxed text-gray-500">
             We'll notify you as soon as an enquiry matches your trades and areas.
           </p>
-          <button
-            type="button"
-            onClick={() => navigate("/contractor/jobs")}
-            className="mt-5 rounded-xl border border-gray-300 px-5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-          >
-            View your jobs
-          </button>
         </div>
       ) : (
         <ul className="space-y-3">

@@ -153,8 +153,16 @@ const constructionAdminApi = {
       counts: data?.counts || {},
     };
   },
-  updateMaterialRequestStatus: async (id, body) =>
-    unwrap(await axiosInstance.patch(`${BASE}/material-requests/${id}/status`, body))?.request,
+  updateMaterialRequestNote: async (id, adminNote) =>
+    unwrap(await axiosInstance.patch(`${BASE}/material-requests/${id}/note`, { adminNote }))?.request,
+  sendMaterialQuotation: async (id, body) =>
+    unwrap(await axiosInstance.post(`${BASE}/material-requests/${id}/quotation`, body))?.request,
+  dispatchMaterialRequest: async (id, trackingNote = '') =>
+    unwrap(await axiosInstance.post(`${BASE}/material-requests/${id}/dispatch`, { trackingNote }))?.request,
+  deliverMaterialRequest: async (id, trackingNote = '') =>
+    unwrap(await axiosInstance.post(`${BASE}/material-requests/${id}/deliver`, { trackingNote }))?.request,
+  cancelMaterialRequest: async (id, reason) =>
+    unwrap(await axiosInstance.post(`${BASE}/material-requests/${id}/cancel`, { reason }))?.request,
 
   // ---------- Contractors (BRD A2, A3 · Rule 6) ----------
   getContractorStats: async () => {

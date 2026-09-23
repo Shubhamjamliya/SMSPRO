@@ -17,14 +17,17 @@ const firstIssue = (result) => {
 };
 
 /**
- * What the customer sends: WHICH package and the site details. Never a price, a fee
- * or a total — the server looks the package up and works those out itself, so a
- * tampered request cannot understate what a package costs or waive the visiting fee.
+ * What the customer sends: WHICH package or budget-friendly service, and the site
+ * details. Never a price, a fee or a total — the server looks the source up and
+ * works those out itself, so a tampered request cannot understate what it costs or
+ * waive the visiting fee. Exactly one of `packageId` / `serviceId` is expected —
+ * the two catalogues are booked through this same form.
  */
+const objectId = (message) => z.string().refine((v) => mongoose.Types.ObjectId.isValid(v), message);
+
 const requestSchema = z.object({
-  packageId: z
-    .string({ required_error: 'Choose a package' })
-    .refine((v) => mongoose.Types.ObjectId.isValid(v), 'Choose a package'),
+  packageId: objectId('Choose a package').optional(),
+  serviceId: objectId('Choose a service').optional(),
   contact: z.object({
     name: z.string({ required_error: 'Please enter your name' }).trim().min(1, 'Please enter your name').max(120),
     phone: z.string({ required_error: 'Please enter a phone number' }),
@@ -59,6 +62,8 @@ export const validatePackageRequestDto = (body = {}) => {
   const result = requestSchema.safeParse(body);
   if (!result.success) throw new ValidationError(firstIssue(result));
   const d = result.data;
+  if (!d.packageId && !d.serviceId) throw new ValidationError('Choose a package or a service');
+  if (d.packageId && d.serviceId) throw new ValidationError('Choose either a package or a service, not both');
 
   const phone = cleanPhone(d.contact.phone);
   if (phone.digits.length < 7 || phone.digits.length > 15) {
@@ -67,6 +72,7 @@ export const validatePackageRequestDto = (body = {}) => {
 
   return {
     packageId: d.packageId,
+    serviceId: d.serviceId,
     contact: { name: tidy(d.contact.name), phone: phone.value },
     city: tidy(d.city),
     area: tidy(d.area),

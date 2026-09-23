@@ -18,7 +18,9 @@ import { ContractorProfile } from '../models/contractorProfile.model.js';
 import { ConstructionCategory } from '../models/constructionCategory.model.js';
 import { getSettings } from './settings.service.js';
 import { touchEnquiry } from './enquiry.service.js';
-import { notifyQuotationSent, contractorName } from './notify.service.js';
+import {
+  notifyQuotationSent, notifyProjectStarted, notifyContractorDeclinedAcceptance, contractorName,
+} from './notify.service.js';
 
 const alive = { isDeleted: { $ne: true } };
 
@@ -314,6 +316,108 @@ export const answerQuery = async (contractorId, quotationId, queryId, answer) =>
   query.answer = String(answer || '').trim();
   query.answeredAt = new Date();
   await quotation.save();
+  return quotation.toObject();
+};
+
+/**
+ * The second half of the handshake — see `enquiry.service.js#acceptQuotation`.
+ *
+ * A customer accepting only locks the price and asks the contractor to
+ * confirm; the enquiry becomes a real project only here. Idempotent: a
+ * contractor who confirms twice (double tap, retried request) just gets the
+ * same project back rather than an error.
+ */
+export const confirmQuotationByContractor = async (contractorId, quotationId) => {
+  const quotation = await Quotation.findOne({ _id: quotationId, contractorId, ...alive });
+  if (!quotation) throw new ValidationError('Quotation not found');
+
+  const { createProjectFromQuotation } = await import('./project.service.js');
+
+  if (quotation.contractorConfirmation?.status === 'accepted') {
+    const project = await createProjectFromQuotation(quotation._id);
+    return { quotation: quotation.toObject(), project };
+  }
+  if (quotation.status !== 'accepted') {
+    throw new ValidationError(`This quotation cannot be confirmed — it is ${quotation.status}`);
+  }
+
+  quotation.contractorConfirmation = {
+    status: 'accepted',
+    respondedAt: new Date(),
+    declineReason: '',
+  };
+  quotation.statusHistory.push({
+    status: 'accepted', reason: 'Contractor confirmed — project started', at: new Date(),
+  });
+  await quotation.save();
+
+  const project = await createProjectFromQuotation(quotation._id);
+
+  contractorName(contractorId)
+    .then((name) => notifyProjectStarted({
+      customerId: quotation.customerId,
+      contractorName: name,
+      quotation: { id: quotation._id, quotationNumber: quotation.quotationNumber, total: quotation.total },
+      projectId: project?._id,
+    }))
+    .catch(() => {});
+
+  await recordAudit({
+    module: 'construction',
+    entityType: 'quotation',
+    entityId: quotation._id,
+    action: 'quotation.contractor_confirmed',
+    after: {
+      quotationNumber: quotation.quotationNumber,
+      projectId: project ? String(project._id) : null,
+    },
+  });
+
+  return { quotation: quotation.toObject(), project };
+};
+
+/**
+ * The contractor cannot take this project on after all — site turned out to
+ * be too far, they are overbooked, whatever. This does NOT reopen the
+ * enquiry to other contractors automatically (their quotes were already
+ * withdrawn when the customer accepted); it just tells the customer promptly
+ * so they can chase it up rather than wait on a project that will never
+ * start (mirrors BRD W7's "a fast decline is better than a slow non-answer").
+ */
+export const declineQuotationByContractor = async (contractorId, quotationId, reason) => {
+  const quotation = await Quotation.findOne({ _id: quotationId, contractorId, ...alive });
+  if (!quotation) throw new ValidationError('Quotation not found');
+  if (quotation.contractorConfirmation?.status === 'accepted') {
+    throw new ValidationError('You have already confirmed this project');
+  }
+  if (quotation.status !== 'accepted') {
+    throw new ValidationError(`This quotation cannot be declined — it is ${quotation.status}`);
+  }
+
+  quotation.contractorConfirmation = {
+    status: 'declined',
+    respondedAt: new Date(),
+    declineReason: String(reason || '').trim(),
+  };
+  await quotation.save();
+
+  notifyContractorDeclinedAcceptance({
+    customerId: quotation.customerId,
+    quotation: { id: quotation._id, quotationNumber: quotation.quotationNumber },
+    reason: quotation.contractorConfirmation.declineReason,
+  }).catch(() => {});
+
+  await recordAudit({
+    module: 'construction',
+    entityType: 'quotation',
+    entityId: quotation._id,
+    action: 'quotation.contractor_declined',
+    after: {
+      quotationNumber: quotation.quotationNumber,
+      reason: quotation.contractorConfirmation.declineReason,
+    },
+  });
+
   return quotation.toObject();
 };
 

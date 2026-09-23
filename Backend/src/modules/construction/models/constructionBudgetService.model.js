@@ -32,6 +32,14 @@ const constructionBudgetServiceSchema = new mongoose.Schema(
      */
     price: { type: Number, default: null, min: 0 },
     unit: { type: String, default: '', trim: true, maxlength: 40 },
+
+    /**
+     * What the customer pays up front for the site visit, in whole rupees. 0 means
+     * the visit is free and the booking goes straight to contractors — same rule as
+     * `ConstructionPackage.visitingFee`, which this mirrors so a budget-friendly
+     * offering can be booked exactly like a Residential/Commercial package.
+     */
+    visitingFee: { type: Number, default: 0, min: 0 },
     typicalDurationText: { type: String, default: '', trim: true, maxlength: 120 },
     /** What is included — shown as ticks on the card. */
     features: { type: [String], default: [] },

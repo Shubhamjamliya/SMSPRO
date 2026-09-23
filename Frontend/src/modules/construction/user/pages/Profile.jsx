@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import {
   User, HardHat, FileText, ClipboardList, Wallet, MapPin,
   ShieldCheck, HelpCircle, LogOut, ChevronRight, Settings,
-  Phone, Mail, ArrowLeft, RefreshCw, Building2, CheckCircle2, Lock, X,
+  Phone, Mail, ArrowLeft, RefreshCw, Building2, CheckCircle2, Lock, X, Layers,
 } from "lucide-react";
 import { clearUserSession } from "@food/utils/auth";
 import { clearAuthState } from "@/app/slices/authSlice";
@@ -104,6 +104,13 @@ export default function Profile() {
                 icon: HardHat,
                 to: "/construction/projects",
                 tone: "bg-emerald-500/10 text-emerald-600",
+              },
+              {
+                title: "Material Requests",
+                subtitle: "Quotes & delivery",
+                icon: Layers,
+                to: "/construction/material-requests",
+                tone: "bg-cyan-500/10 text-cyan-600",
               },
               {
                 title: "Escrow Wallet",

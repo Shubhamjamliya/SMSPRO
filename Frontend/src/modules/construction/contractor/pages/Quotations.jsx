@@ -107,10 +107,10 @@ export default function Quotations() {
             </p>
             <button
               type="button"
-              onClick={() => navigate("/contractor/jobs")}
+              onClick={() => navigate("/contractor/leads")}
               className="mt-5 rounded-xl bg-orange-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-600"
             >
-              Go to your jobs
+              Go to your enquiries
             </button>
           </div>
         ) : (
@@ -181,9 +181,15 @@ export default function Quotations() {
                       {q.quotationNumber} · v{q.version}
                     </p>
                     <div className="mt-1.5 flex items-center gap-2">
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_TONE[q.status] || "bg-gray-100 text-gray-600"}`}>
-                        {QUOTE_STATUS_LABEL[q.status] || q.status}
-                      </span>
+                      {q.status === "accepted" && (!q.contractorConfirmation || q.contractorConfirmation.status === "pending") ? (
+                        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                          Awaiting your confirmation
+                        </span>
+                      ) : (
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_TONE[q.status] || "bg-gray-100 text-gray-600"}`}>
+                          {QUOTE_STATUS_LABEL[q.status] || q.status}
+                        </span>
+                      )}
                       <span className="text-[11px] text-gray-400">
                         {q.enquiryId?.site?.city} · {shortDate(q.updatedAt)}
                       </span>

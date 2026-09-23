@@ -9,8 +9,13 @@ export const shortMoney = (value) => {
   return `₹${n.toLocaleString("en-IN")}`;
 };
 
-/** Full precision, for anything that forms part of an agreement. */
+/**
+ * Full precision, for anything that forms part of an agreement. `null`/`undefined`
+ * reads as "not set" (e.g. a budget-friendly booking with no listed rate, quoted
+ * only after the site visit) rather than the misleading "₹0" `Number(null)` gives.
+ */
 export const fullMoney = (value) => {
+  if (value == null) return "—";
   const n = Number(value);
   if (!Number.isFinite(n)) return "—";
   return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;

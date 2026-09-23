@@ -157,6 +157,23 @@ export const markInboxRead = async (contractorId, notificationId = null) => {
   return listInbox(contractorId);
 };
 
+/**
+ * Clear the whole inbox. Mirrors the core notification service's
+ * `dismissAllNotifications` (`core/notifications/notification.service.js`) —
+ * construction has its own bespoke inbox rather than that generic one because
+ * the CONTRACTOR role is not wired into the shared `/food/notifications`
+ * routes — but the same `dismissedAt` field is what `listInbox` already
+ * filters on, so a cleared row simply stops being returned.
+ */
+export const dismissAllInbox = async (contractorId) => {
+  const now = new Date();
+  await FoodNotification.updateMany(
+    { ownerType: 'CONTRACTOR', ownerId: contractorId, dismissedAt: null },
+    { $set: { dismissedAt: now, isRead: true, readAt: now } },
+  );
+  return listInbox(contractorId);
+};
+
 /** FCM data payloads must be flat strings. */
 const stringifyMeta = (meta = {}) => Object.fromEntries(
   Object.entries(meta)
@@ -249,20 +266,48 @@ export const notifyQuotationQuery = async ({ contractorId, quotation, kind }) =>
   metadata: { quotationId: String(quotation.id), quotationNumber: quotation.quotationNumber },
 });
 
-/** BRD C13 — the turning point. */
+/**
+ * BRD C13 — the turning point, but only the customer's half of it. The
+ * quotation is locked at this price now; the contractor still has to
+ * confirm before it becomes their project (see `notifyProjectStarted`).
+ */
 export const notifyQuotationAccepted = async ({ contractorId, quotation, enquiry }) => notify({
   ownerType: 'CONTRACTOR',
   ownerId: contractorOwnerId(contractorId),
   source: 'QUOTATION_RECEIVED',
-  title: 'Your quotation was accepted',
+  title: 'Customer accepted your quotation',
   message: `${quotation.quotationNumber} accepted at ₹${Number(quotation.total).toLocaleString('en-IN')}. `
-    + 'The customer will fund the project next.',
+    + 'Confirm it to start the project.',
   link: `/contractor/quotations/${quotation.id}`,
   metadata: {
     quotationId: String(quotation.id),
     enquiryId: String(enquiry.id),
     total: quotation.total,
   },
+});
+
+/** The contractor confirmed — the enquiry is now a live project. */
+export const notifyProjectStarted = async ({ customerId, contractorName, quotation, projectId }) => notify({
+  ownerType: 'USER',
+  ownerId: String(customerId),
+  source: 'PROJECT_STATUS',
+  title: 'Your project has started',
+  message: `${contractorName} confirmed ${quotation.quotationNumber}. Fund the first stage to get moving.`,
+  link: projectId ? `/construction/projects/${projectId}` : `/construction/quotations/${quotation.id}`,
+  metadata: { quotationId: String(quotation.id), projectId: projectId ? String(projectId) : '' },
+});
+
+/** The contractor could not take it on after all — the customer needs to know before they wait on it. */
+export const notifyContractorDeclinedAcceptance = async ({ customerId, quotation, reason }) => notify({
+  ownerType: 'USER',
+  ownerId: String(customerId),
+  source: 'QUOTATION_RECEIVED',
+  title: 'Contractor could not take on this project',
+  message: reason
+    ? `${quotation.quotationNumber} — ${reason}`
+    : `The contractor was unable to confirm ${quotation.quotationNumber}. Contact them or ask for a fresh quote.`,
+  link: `/construction/quotations/${quotation.id}`,
+  metadata: { quotationId: String(quotation.id) },
 });
 
 export const notifyQuotationRejected = async ({ contractorId, quotation, reason }) => notify({

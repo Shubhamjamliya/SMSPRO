@@ -5,9 +5,21 @@ import { actionPerformerSchema } from '../../../core/models/actionPerformer.sche
 /**
  * ConstructionProject — the long-lived aggregate (BRD steps 9–16, C14, W14).
  *
- * Created the moment a customer accepts a quotation, which is where "the agreed
- * price and scope are locked". Everything commercial is SNAPSHOTTED here rather
- * than read live from settings or from the quotation:
+ * Created once both sides have committed — the customer accepted a price and
+ * the contractor confirmed they will do the work — which is where "the agreed
+ * price and scope are locked". That handshake happens via one of two entirely
+ * separate pipelines, so a project is sourced from EITHER (never both):
+ *
+ *   - `quotationId` — the enquiry pipeline: a contractor-built, itemised
+ *     `Quotation` with its own staged payment plan
+ *     (`quotation.service.js#confirmQuotationByContractor`).
+ *   - `packageRequestId` — the package/site-visit pipeline: the office's
+ *     fixed-price `contract` on a `PackageRequest`, which has no staged plan
+ *     of its own — see `project.service.js#createProjectFromPackageContract`,
+ *     which synthesises an advance/balance split (or a single stage).
+ *
+ * Everything commercial is SNAPSHOTTED here rather than read live from
+ * settings or from the source document:
  *
  *   - `agreedValue` is frozen at acceptance. If the quotation were later revised
  *     or the settings changed, a project already under way must not silently
@@ -61,17 +73,30 @@ const constructionProjectSchema = new mongoose.Schema(
   {
     projectNumber: { type: String, unique: true, sparse: true, trim: true },
 
+    // Exactly one of (enquiryId + quotationId) or (packageRequestId) is set — see the
+    // doc comment above. `sparse` lets the unset side stay null across many rows
+    // without tripping the unique index (a plain unique index treats every `null`
+    // as the same value and would allow only one such project ever).
     enquiryId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'ConstructionEnquiry',
-      required: true,
+      default: null,
       index: true,
     },
     quotationId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Quotation',
-      required: true,
+      default: null,
       unique: true,
+      sparse: true,
+    },
+    packageRequestId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'PackageRequest',
+      default: null,
+      unique: true,
+      sparse: true,
+      index: true,
     },
     customerId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -187,6 +212,20 @@ constructionProjectSchema.virtual('outstandingToFund').get(function outstanding(
 
 constructionProjectSchema.set('toObject', { virtuals: true });
 constructionProjectSchema.set('toJSON', { virtuals: true });
+
+constructionProjectSchema.pre('validate', function checkSource(next) {
+  const fromQuotation = Boolean(this.quotationId);
+  const fromPackage = Boolean(this.packageRequestId);
+  if (fromQuotation === fromPackage) {
+    return next(new Error(
+      'A project must be created from exactly one source — either a quotation or a package request contract',
+    ));
+  }
+  if (fromQuotation && !this.enquiryId) {
+    return next(new Error('A quotation-sourced project must also carry its enquiryId'));
+  }
+  next();
+});
 
 constructionProjectSchema.pre('validate', function checkMoney(next) {
   const funded = Number(this.fundedAmount) || 0;

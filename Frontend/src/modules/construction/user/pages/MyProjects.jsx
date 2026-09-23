@@ -15,6 +15,7 @@ export default function MyProjects() {
   const navigate = useNavigate();
   const [rows, setRows] = useState([]);
   const [approvals, setApprovals] = useState([]);
+  const [pendingConfirmations, setPendingConfirmations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -22,13 +23,18 @@ export default function MyProjects() {
     let cancelled = false;
     (async () => {
       try {
-        const [list, pending] = await Promise.all([
+        const [list, pending, quotes] = await Promise.all([
           constructionApi.listProjects({ limit: 50 }),
           constructionApi.listPendingApprovals().catch(() => []),
+          // Accepted, but not yet a project — the contractor still has to confirm.
+          constructionApi.listQuotations().catch(() => []),
         ]);
         if (cancelled) return;
         setRows(list.rows || []);
         setApprovals(pending || []);
+        setPendingConfirmations((quotes || []).filter(
+          (q) => q.status === "accepted" && (!q.contractorConfirmation || q.contractorConfirmation.status === "pending"),
+        ));
       } catch (err) {
         if (!cancelled) setError(errorMessage(err, "Could not load your projects"));
       } finally {
@@ -95,6 +101,46 @@ export default function MyProjects() {
           </div>
         ) : null}
 
+        {/* Accepted, waiting on the contractor to confirm before it becomes a project */}
+        {pendingConfirmations.length > 0 ? (
+          <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 shadow-2xs space-y-3">
+            <div className="flex items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-500 text-white shadow-2xs">
+                <HardHat className="h-5 w-5 stroke-[2.5]" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-black text-slate-900">
+                  {pendingConfirmations.length === 1
+                    ? "Waiting for the contractor to confirm"
+                    : `${pendingConfirmations.length} quotations waiting for the contractor to confirm`}
+                </p>
+                <p className="text-[11px] font-medium text-slate-600">
+                  You accepted the price — the project opens here as soon as they do.
+                </p>
+              </div>
+            </div>
+            <ul className="space-y-2">
+              {pendingConfirmations.map((q) => (
+                <li key={q._id}>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/construction/quotations/${q._id}`)}
+                    className="flex w-full items-center justify-between gap-3 rounded-lg bg-white p-3 text-left border border-blue-200 shadow-2xs hover:border-blue-400 transition-all"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-extrabold text-slate-900">
+                        {q.enquiryId?.serviceId?.name || q.title || "Quotation"}
+                      </p>
+                      <p className="truncate text-[11px] font-medium text-slate-500">{q.contractorId?.businessName}</p>
+                    </div>
+                    <p className="shrink-0 text-xs font-black tabular-nums text-blue-700">{fullMoney(q.total)}</p>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
         {loading ? (
           <div className="space-y-3">
             {[0, 1, 2].map((i) => (
@@ -105,7 +151,7 @@ export default function MyProjects() {
           <EmptyState
             icon={Building2}
             title="No Active Projects Yet"
-            detail="Your active construction projects appear here once you accept a contractor's quotation."
+            detail="Your active construction projects appear here once a contractor confirms a quotation you've accepted."
             action={
               <button
                 type="button"

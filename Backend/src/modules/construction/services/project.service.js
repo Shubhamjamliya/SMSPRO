@@ -11,6 +11,7 @@ import { ProjectStage } from '../models/projectStage.model.js';
 import { StageSubmission } from '../models/stageSubmission.model.js';
 import { ConstructionEnquiry } from '../models/constructionEnquiry.model.js';
 import { Quotation } from '../models/quotation.model.js';
+import { PackageRequest } from '../models/packageRequest.model.js';
 import { ContractorProfile } from '../models/contractorProfile.model.js';
 /*
  * Mongoose resolves `.populate()` by MODEL NAME at call time, so every model
@@ -136,6 +137,108 @@ export const createProjectFromQuotation = async (quotationId) => {
       agreedValue,
       quotationNumber: quotation.quotationNumber,
       contractorId: String(quotation.contractorId),
+    },
+  });
+
+  return project.toObject();
+};
+
+/**
+ * The package/site-visit pipeline's equivalent of `createProjectFromQuotation`
+ * (see the model's doc comment for why these are two separate paths).
+ *
+ * A package `contract` is a single fixed price, not an itemised, staged
+ * quotation — there is no `proposedStages` to carry over. So the stage plan is
+ * synthesised here: an advance/balance split when the contract has an advance,
+ * otherwise `buildStages`' own fallback of one 100% "Completion" stage.
+ *
+ * Idempotent on packageRequestId (unique index), so a retried confirmation
+ * returns the project that already exists rather than creating a second one.
+ */
+export const createProjectFromPackageContract = async (packageRequestId) => {
+  const existing = await ConstructionProject.findOne({ packageRequestId, ...alive });
+  if (existing) return existing.toObject();
+
+  const request = await PackageRequest.findOne({ _id: packageRequestId, ...alive }).lean();
+  if (!request) throw new ValidationError('Site visit request not found');
+  if (request.contract?.status !== 'accepted') {
+    throw new ValidationError('Only an accepted contract becomes a project');
+  }
+  if (!request.assignedContractorId) throw new ValidationError('No contractor is assigned to this request');
+
+  const settings = await getSettings();
+  const money = settings.money || {};
+  const commission = settings.commission || {};
+
+  const agreedValue = round2(request.contract.price);
+  if (agreedValue <= 0) throw new ValidationError('The agreed value must be greater than zero');
+
+  let project;
+  try {
+    project = await ConstructionProject.create({
+      packageRequestId: request._id,
+      customerId: request.customerId,
+      contractorId: request.assignedContractorId,
+      title: request.package?.name || 'Construction project',
+      agreedValue,
+      retentionPercent: Number(money.retentionPercent) || 0,
+      defectLiabilityDays: Number(money.defectLiabilityDays) || 0,
+      commission: {
+        model: commission.model || 'percentage',
+        value: Number(commission.value) || 0,
+        chargedAt: commission.chargedAt || 'per_stage',
+        chargedTo: commission.chargedTo || 'contractor',
+        collectedAmount: 0,
+      },
+      participants: [{
+        userId: request.customerId,
+        role: 'owner',
+        canApproveStages: true,
+        canApprovePayments: true,
+      }],
+      status: 'awaiting_funding',
+      statusHistory: [{ status: 'awaiting_funding', reason: 'Contract confirmed by contractor', at: new Date() }],
+    });
+  } catch (err) {
+    // Lost a race on the unique packageRequestId — return the winner.
+    if (err?.code === 11000) {
+      const raced = await ConstructionProject.findOne({ packageRequestId, ...alive });
+      if (raced) return raced.toObject();
+    }
+    throw err;
+  }
+
+  const advance = round2(request.contract.advanceAmount || 0);
+  const proposedStages = advance > 0 && advance < agreedValue
+    ? [
+      {
+        name: 'Advance',
+        percentage: round2((advance / agreedValue) * 100),
+        description: 'Booking advance',
+      },
+      {
+        // Subtracted from 100 rather than computed independently, so the two
+        // percentages always sum to exactly 100 regardless of rounding.
+        name: 'Balance on completion',
+        percentage: round2(100 - round2((advance / agreedValue) * 100)),
+        description: 'Remaining balance on completion',
+      },
+    ]
+    : [];
+  await buildStages(project, proposedStages);
+
+  await PackageRequest.updateOne({ _id: request._id }, { $set: { projectId: project._id } });
+
+  await recordAudit({
+    module: 'construction',
+    entityType: 'project',
+    entityId: project._id,
+    action: 'project.created',
+    after: {
+      projectNumber: project.projectNumber,
+      agreedValue,
+      contractNumber: request.contract.number,
+      contractorId: String(request.assignedContractorId),
     },
   });
 

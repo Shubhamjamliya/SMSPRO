@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import mongoose from 'mongoose';
 import { ValidationError } from '../../../core/auth/errors.js';
-import { MATERIAL_REQUEST_STATUSES } from '../models/materialRequest.model.js';
 
 const trimmedList = (values, max = 30) => (values || [])
   .map((v) => String(v || '').trim())
@@ -100,6 +99,9 @@ const requestSchema = z.object({
     city: z.string({ required_error: 'Which city should this be delivered to?' })
       .trim().min(1, 'Which city should this be delivered to?').max(120),
     address: z.string().max(400).optional(),
+    landmark: z.string().max(200).optional(),
+    state: z.string().max(80).optional(),
+    pincode: z.string().max(12).optional(),
   }),
   notes: z.string().max(1000).optional(),
   items: z.array(z.object({
@@ -128,23 +130,73 @@ export const validateMaterialRequestDto = (body = {}) => {
 
   return {
     contact: { name: tidy(d.contact.name), phone: phone.value },
-    delivery: { city: tidy(d.delivery.city), address: d.delivery.address?.trim() || '' },
+    delivery: {
+      city: tidy(d.delivery.city),
+      address: d.delivery.address?.trim() || '',
+      landmark: d.delivery.landmark?.trim() || '',
+      state: d.delivery.state?.trim() || '',
+      pincode: d.delivery.pincode?.trim() || '',
+    },
     notes: d.notes?.trim() || '',
     items: [...merged].map(([materialId, quantity]) => ({ materialId, quantity })),
   };
 };
 
-export const validateRequestStatusDto = (body = {}) => {
+// ---------- Requests (admin: quotation) ----------
+
+/**
+ * What the office sends: the item total is never taken from the body — it is
+ * always the request's own `estimatedTotal`, snapshotted server-side — only the
+ * transport and other charges are the office's to set.
+ */
+export const validateSendQuotationDto = (body = {}) => {
   const schema = z.object({
-    status: z.enum(MATERIAL_REQUEST_STATUSES, {
-      errorMap: () => ({ message: `Status must be one of: ${MATERIAL_REQUEST_STATUSES.join(', ')}` }),
-    }),
-    adminNote: z.string().max(1000).optional(),
+    transportCharge: z.coerce.number().min(0, 'Transport charge cannot be negative').max(10000000).optional(),
+    otherCharges: z.coerce.number().min(0, 'Other charges cannot be negative').max(10000000).optional(),
+    otherChargesNote: z.string().max(200).optional(),
+    notes: z.string().max(1000).optional(),
+    validUntil: z.coerce.date({ invalid_type_error: 'Invalid date' }).optional(),
   });
   const result = schema.safeParse(body);
   if (!result.success) throw new ValidationError(firstIssue(result));
+  const d = result.data;
   return {
-    status: result.data.status,
-    adminNote: result.data.adminNote === undefined ? undefined : result.data.adminNote.trim(),
+    transportCharge: d.transportCharge ?? 0,
+    otherCharges: d.otherCharges ?? 0,
+    otherChargesNote: d.otherChargesNote?.trim() || '',
+    notes: d.notes?.trim() || '',
+    validUntil: d.validUntil ?? null,
   };
+};
+
+// ---------- Requests (customer: responding to a quotation) ----------
+
+export const validateQuotationResponseDto = (body = {}) => {
+  const schema = z.object({ note: z.string().max(500).optional() });
+  const result = schema.safeParse(body);
+  if (!result.success) throw new ValidationError(firstIssue(result));
+  return { note: result.data.note?.trim() || '' };
+};
+
+// ---------- Requests (admin: delivery + cancel) ----------
+
+export const validateDeliveryUpdateDto = (body = {}) => {
+  const schema = z.object({ trackingNote: z.string().max(300).optional() });
+  const result = schema.safeParse(body);
+  if (!result.success) throw new ValidationError(firstIssue(result));
+  return { trackingNote: result.data.trackingNote?.trim() || '' };
+};
+
+export const validateCancelRequestDto = (body = {}) => {
+  const schema = z.object({ reason: z.string().trim().min(3, 'Give a short reason for cancelling').max(300) });
+  const result = schema.safeParse(body);
+  if (!result.success) throw new ValidationError(firstIssue(result));
+  return result.data;
+};
+
+export const validateAdminNoteDto = (body = {}) => {
+  const schema = z.object({ adminNote: z.string().max(1000).optional() });
+  const result = schema.safeParse(body);
+  if (!result.success) throw new ValidationError(firstIssue(result));
+  return { adminNote: result.data.adminNote?.trim() ?? '' };
 };

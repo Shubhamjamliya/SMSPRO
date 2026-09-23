@@ -118,7 +118,7 @@ export const deleteBudgetService = async (id, reqUser = null) => {
 export const listCustomerBudgetServices = async () => {
   const docs = await ConstructionBudgetService
     .find({ ...alive, status: 'active' })
-    .select('name tagline description image badge price unit typicalDurationText features catalogueServiceId displayOrder')
+    .select('name tagline description image badge price unit visitingFee typicalDurationText features catalogueServiceId displayOrder')
     .sort({ displayOrder: 1, name: 1 })
     .lean();
 

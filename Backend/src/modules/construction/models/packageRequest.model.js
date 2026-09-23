@@ -4,6 +4,9 @@ import { actionPerformerSchema } from '../../../core/models/actionPerformer.sche
 /**
  * PackageRequest — a customer booking a Residential or Commercial package on the
  * End-to-End screen, from choosing the plan to a contractor taking the site visit.
+ * Also covers a Budget Friendly service booked the same way (`package.sourceModel:
+ * 'ConstructionBudgetService'`, `package.segment: 'budget_service'`) — the whole
+ * site-visit-to-contract flow below is shared, not duplicated per catalogue.
  *
  * The life of one request:
  *
@@ -104,6 +107,22 @@ const visitReportSchema = new mongoose.Schema(
   { _id: false },
 );
 
+/**
+ * The customer accepting is only half of it — the contractor still has to
+ * confirm before the fee they paid to take the site visit is earned back and
+ * work can start. Mirrors `Quotation.contractorConfirmation` in the
+ * enquiry/quotation flow (`models/quotation.model.js`); `contract.status`
+ * stays `accepted` either way, this sub-document tracks the second step.
+ */
+const contractConfirmationSchema = new mongoose.Schema(
+  {
+    status: { type: String, enum: ['pending', 'accepted', 'declined'], default: null },
+    respondedAt: { type: Date, default: null },
+    declineNote: { type: String, trim: true, default: '', maxlength: 500 },
+  },
+  { _id: false },
+);
+
 /** The office's offer once the report is in: a price and terms for the customer to accept. */
 const contractSchema = new mongoose.Schema(
   {
@@ -119,6 +138,7 @@ const contractSchema = new mongoose.Schema(
     validUntil: { type: Date, default: null },
     respondedAt: { type: Date, default: null },
     responseNote: { type: String, default: '', trim: true, maxlength: 500 },
+    contractorConfirmation: { type: contractConfirmationSchema, default: null },
   },
   { _id: false },
 );
@@ -154,11 +174,22 @@ const packageRequestSchema = new mongoose.Schema(
     },
 
     package: {
-      packageId: { type: mongoose.Schema.Types.ObjectId, ref: 'ConstructionPackage', required: true },
+      /**
+       * Which catalogue this was booked from — a Residential/Commercial `ConstructionPackage`,
+       * or a `ConstructionBudgetService` (booked the same way, under Budget Friendly).
+       * `packageId` is resolved against whichever this names (see `refPath` below).
+       */
+      sourceModel: {
+        type: String,
+        enum: ['ConstructionPackage', 'ConstructionBudgetService'],
+        default: 'ConstructionPackage',
+      },
+      packageId: { type: mongoose.Schema.Types.ObjectId, refPath: 'package.sourceModel', required: true },
+      /** 'residential' | 'commercial' | 'budget_service'. */
       segment: { type: String, required: true },
       name: { type: String, required: true, trim: true },
-      /** Rupees per `unit` at the time of the request. */
-      price: { type: Number, required: true, min: 0 },
+      /** Rupees per `unit` at the time of the request. Null when the source has no listed rate — quoted after the visit. */
+      price: { type: Number, default: null, min: 0 },
       unit: { type: String, default: 'per sq.ft', trim: true },
     },
 
@@ -185,8 +216,8 @@ const packageRequestSchema = new mongoose.Schema(
       totalBuiltUpArea: { type: Number, required: true, min: 0 },
     },
 
-    /** rate × total built-up area — an indication, not a quote. */
-    estimatedCost: { type: Number, required: true, min: 0 },
+    /** rate × total built-up area — an indication, not a quote. Null when the source has no listed rate. */
+    estimatedCost: { type: Number, default: null, min: 0 },
 
     /** The visiting fee charged for this booking, snapshotted from the package. 0 = free visit. */
     visitingFee: { type: Number, default: 0, min: 0 },
@@ -245,6 +276,29 @@ const packageRequestSchema = new mongoose.Schema(
       index: true,
     },
     assignedAt: { type: Date, default: null },
+
+    /** Set once the contractor confirms the contract — see `project.service.js#createProjectFromPackageContract`. */
+    projectId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ConstructionProject',
+      default: null,
+    },
+
+    /**
+     * The minimum fee charged to the accepting contractor's wallet
+     * (`settings.money.siteVisitAcceptanceFee`), snapshotted here for the
+     * record. `null`/`amount: 0` means no fee applied to this request.
+     * Refunded automatically once the CUSTOMER accepts this same request's
+     * contract — the visit having turned into real business is what earns it
+     * back (see `packageVisit.service.js#respond`).
+     */
+    acceptanceFee: {
+      amount: { type: Number, default: 0, min: 0 },
+      chargedAt: { type: Date, default: null },
+      transactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction', default: null },
+      refundedAt: { type: Date, default: null },
+      refundTransactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction', default: null },
+    },
 
     /** Internal only — never returned to the customer. */
     adminNote: { type: String, default: '', trim: true, maxlength: 1000 },
